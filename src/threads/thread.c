@@ -200,6 +200,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  t->sleep_timer=0;
 
   return tid;
 }
@@ -329,6 +330,15 @@ thread_foreach (thread_action_func *func, void *aux)
       struct thread *t = list_entry (e, struct thread, allelem);
       func (t, aux);
     }
+}
+
+void
+check_block(struct thread *t,void *aux){
+  if(t->status==THREAD_BLOCKED&&t->sleep_timer>0){
+    t->sleep_timer--;
+    if(t->sleep_timer==0)
+      thread_unblock(t);
+  }
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
