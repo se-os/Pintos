@@ -1,1 +1,1 @@
-# Pintos-Project-1
+# Pintos
