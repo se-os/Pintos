@@ -199,9 +199,10 @@ thread_create (const char *name, int priority,
   sf->ebp = 0;
 
   intr_set_level(old_level);
-  t->sleep_timer=0;
+  t->sleep_timer=0;/*初始化计数器*/
   /* Add to run queue. */
   thread_unblock (t);
+  /*创建线程时，也进行对优先级的判断，与手动设置优先级时进行的操作一样*/
   if(thread_current()->priority<priority)
     thread_yield();
 
@@ -241,7 +242,8 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_insert_ordered (&ready_list, &t->elem, (list_less_func *) &thread_cmp_priority, NULL);
+  // list_push_back (&ready_list, &t->elem);/*将线程放入就绪队列队尾*/
+  list_insert_ordered (&ready_list, &t->elem, (list_less_func *) &thread_cmp_priority, NULL);/*放入队列并排序*/
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -312,7 +314,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_insert_ordered (&ready_list, &cur->elem, (list_less_func *) &thread_cmp_priority, NULL);
+    list_insert_ordered (&ready_list, &cur->elem, (list_less_func *) &thread_cmp_priority, NULL);/*放入队列并排序*/
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -333,8 +335,9 @@ thread_foreach (thread_action_func *func, void *aux)
       struct thread *t = list_entry (e, struct thread, allelem);
       func (t, aux);
     }
-}
+}/*中断时执行所有线程的检测函数*/
 
+/*本函数用于检查线程的计数器，当计数器等于0时，代表需要唤醒，本函数在每次中断时调用*/
 void
 check_block(struct thread *t,void *aux){
   if(t->status==THREAD_BLOCKED&&t->sleep_timer>0){
@@ -357,10 +360,12 @@ thread_set_priority (int new_priority)
   int old_priority = current_thread->priority;
   current_thread->base_priority = new_priority;
 
+  //若当前线程不持有锁或新优先级高于原优先级
+  //为了配合递归捐赠的情况
   if (list_empty (&current_thread->locks) || new_priority > old_priority)
   {
     current_thread->priority = new_priority;
-    thread_yield ();
+    thread_yield ();/*进行一个优先级是否最高的判断,如果不是就进入队列排队*/
   }
 
   intr_set_level (old_level);
@@ -484,16 +489,19 @@ init_thread (struct thread *t, const char *name, int priority)
   ASSERT (name != NULL);
 
   memset (t, 0, sizeof *t);
+
+  //新增变量
   t->base_priority=priority;
   list_init(&t->locks);
   t->lock_waiting=NULL;
+
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
-  list_insert_ordered (&all_list, &t->allelem, (list_less_func *) &thread_cmp_priority, NULL);
+  list_insert_ordered (&all_list, &t->allelem, (list_less_func *) &thread_cmp_priority, NULL);/*放入队列并排序*/
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -622,8 +630,10 @@ void
 thread_hold_the_lock(struct lock *lock)
 {
   enum intr_level old_level = intr_disable ();
+  //不是很懂这一步，请解释一下
   list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_cmp_priority, NULL);
 
+  //若出现有更高优先级线程请求该锁，进行阻塞，捐赠
   if (lock->max_priority > thread_current ()->priority)
   {
     thread_current ()->priority = lock->max_priority;
@@ -648,17 +658,20 @@ void
 thread_donate_priority (struct thread *t)
 {
   enum intr_level old_level = intr_disable ();
+  //其实这一步是获得捐赠，下面是一些后续调整
   thread_update_priority (t);
 
+  //若该线程处于就绪态，不知道在干嘛，请解释一下
   if (t->status == THREAD_READY)
   {
     list_remove (&t->elem);
-     list_insert_ordered (&ready_list, &t->elem, thread_cmp_priority, NULL);
+    list_insert_ordered (&ready_list, &t->elem, thread_cmp_priority, NULL);
   }
   intr_set_level (old_level);
 }
 
 /* Update priority. */
+//作用在于保证被更新的线程处于最高优先级
 void
 thread_update_priority (struct thread *t)
 {
@@ -666,6 +679,7 @@ thread_update_priority (struct thread *t)
   int max_priority = t->base_priority;
   int lock_priority;
 
+  //若当前线程还持有锁，更新准备队列
   if (!list_empty (&t->locks))
   {
     list_sort (&t->locks, lock_cmp_priority, NULL);

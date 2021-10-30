@@ -67,6 +67,7 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0)
     {
+      //当前线程请求信号量发现为0，加入等待队列并阻塞
       list_insert_ordered (&sema->waiters, &thread_current ()->elem, thread_cmp_priority, NULL);
       thread_block ();
     }
@@ -112,9 +113,13 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
+
+  //信号量有等待线程
   if (!list_empty (&sema->waiters))
   {
+    //排序
     list_sort (&sema->waiters, thread_cmp_priority, NULL);
+    //将队首线程唤醒
     thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
   }
 
@@ -203,18 +208,26 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  //递归的进行优先级捐赠
   if (lock->holder != NULL && !thread_mlfqs)
   {
+    //设置当前线程的请求锁
     current_thread->lock_waiting = lock;
     l = lock;
+    //递归遍历上层锁的占有线程的请求锁，向上层线程捐赠
+    //只有当上层的优先级小于当前的优先级时，才能向上递归
     while (l && current_thread->priority > l->max_priority)
     {
+      //将请求的锁的最大等待优先级置为当前线程优先级
       l->max_priority = current_thread->priority;
+      //向持有该锁的线程捐赠优先级
       thread_donate_priority (l->holder);
+      //设置成上层的等待锁进行递归
       l = l->holder->lock_waiting;
     }
   }
 
+  //P操作
   sema_down (&lock->semaphore);
 
   old_level = intr_disable ();
@@ -222,10 +235,14 @@ lock_acquire (struct lock *lock)
   current_thread = thread_current ();
   if (!thread_mlfqs)
   {
+    //线程获得该锁
     current_thread->lock_waiting = NULL;
     lock->max_priority = current_thread->priority;
+    //使当前线程持有该锁
     thread_hold_the_lock (lock);
   }
+
+  //更新该锁的占有线程为当前线程
   lock->holder = current_thread;
 
   intr_set_level (old_level);
@@ -355,9 +372,12 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
+  //若当前条件有等待线程
   if (!list_empty (&cond->waiters))
   {
+    //排序
     list_sort (&cond->waiters, cond_sema_cmp_priority, NULL);
+    //把队首线程移出,信号量加一，转到信号量操作
     sema_up (&list_entry (list_pop_front (&cond->waiters), struct semaphore_elem, elem)->semaphore);
   }
 }

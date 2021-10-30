@@ -103,7 +103,7 @@ timer_sleep (int64_t ticks)
   enum intr_level old=intr_disable();
   struct thread *cur=thread_current();
   cur->sleep_timer=ticks;
-  thread_block();
+  thread_block();/*阻塞线程避免忙等待*/
   intr_set_level(old);
 }
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
