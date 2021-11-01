@@ -101,6 +101,7 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
     int64_t sleep_timer;/*用于计数线程被阻塞后经过的单位时间个数*/
+    int64_t curtime;
     int base_priority;/*用于存储被捐赠优先级前，线程原来的优先级*/
     struct list locks;/*用于存储线程当前持有的锁*/
     struct lock *lock_waiting;/*线程正在等待的锁*/
@@ -133,6 +134,7 @@ void thread_yield (void);
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
+void blocked_foreach ();
 
 int thread_get_priority (void);
 void thread_set_priority (int);
@@ -143,7 +145,7 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 /*本函数用于检查线程的计数器，当计数器等于0时，代表需要唤醒，本函数在每次中断时调用*/
-void check_block(struct thread *t,void *aux);
+void check_block(struct thread *t);
 void blocked_thread_check (struct thread *t, void *aux UNUSED);
 bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 void thread_hold_the_lock (struct lock *);

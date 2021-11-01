@@ -200,6 +200,7 @@ thread_create (const char *name, int priority,
 
   intr_set_level(old_level);
   t->sleep_timer=0;/*初始化计数器*/
+  t->curtime=0;
   /* Add to run queue. */
   thread_unblock (t);
   /*创建线程时，也进行对优先级的判断，与手动设置优先级时进行的操作一样*/
@@ -336,15 +337,29 @@ thread_foreach (thread_action_func *func, void *aux)
       func (t, aux);
     }
 }/*中断时执行所有线程的检测函数*/
+void
+blocked_foreach ()
+{
+  struct list_elem *e;
 
+  ASSERT (intr_get_level () == INTR_OFF);
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      check_block (t);
+    }
+}
 /*本函数用于检查线程的计数器，当计数器等于0时，代表需要唤醒，本函数在每次中断时调用*/
 void
-check_block(struct thread *t,void *aux){
-  if(t->status==THREAD_BLOCKED&&t->sleep_timer>0){
-    t->sleep_timer--;
-    if(t->sleep_timer==0)
-      thread_unblock(t);
-  }
+check_block(struct thread *t){
+  
+   if(t->status==THREAD_BLOCKED&&t->sleep_timer>t->curtime){
+     t->curtime++;
+     if(t->sleep_timer==t->curtime)
+       thread_unblock(t);
+   }
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
