@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixedPoint.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -58,6 +59,8 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+int load_avg;
+
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -92,6 +95,8 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
 
+  
+
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -104,11 +109,12 @@ thread_init (void)
 void
 thread_start (void) 
 {
+  
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
-
+  load_avg=convert_n_to_fixed_point(0);
   /* Start preemptive thread scheduling. */
   intr_enable ();
 
@@ -337,6 +343,7 @@ thread_foreach (thread_action_func *func, void *aux)
       func (t, aux);
     }
 }/*中断时执行所有线程的检测函数*/
+
 void
 blocked_foreach ()
 {
@@ -351,10 +358,11 @@ blocked_foreach ()
       check_block (t);
     }
 }
-/*本函数用于检查线程的计数器，当计数器等于0时，代表需要唤醒，本函数在每次中断时调用*/
+
+/*本函数用于检查线程的计数器*/
 void
 check_block(struct thread *t){
-  
+
    if(t->status==THREAD_BLOCKED&&t->sleep_timer>t->curtime){
      t->curtime++;
      if(t->sleep_timer==t->curtime)
@@ -390,38 +398,82 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current()->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  thread_current()->nice=nice;
+  change_priority(thread_current(),NULL);
+  thread_yield();
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  //根据文档要求
+  //Returns 100 times the current system load average, rounded to the nearest integer.
+  return convert_x_to_nearest_integer(mul_x_by_n(load_avg,100));
 }
+
+//recent_cpu++
+void 
+increase_recent_cpu(void){
+  if(thread_current()!=idle_thread){
+    thread_current()->recent_cpu=add_x_and_n(thread_current()->recent_cpu,1);
+  }
+}
+
+//修改load_avg
+void 
+change_load_avg(void){
+  int ready=list_size(&ready_list);
+  if(thread_current()!=idle_thread){
+    ready++;
+  }
+  //公式实现；load_avg = (59/60)\times*load_avg + (1/60)\times*ready_threads
+  load_avg=add_x_and_y(div_x_by_n(mul_x_by_n(load_avg,59),60),div_x_by_n(convert_n_to_fixed_point(ready),60));
+}
+
+//修改recent_cpu
+void change_recent_cpu(struct thread *t,void *aux UNUSED){
+  if (t!=idle_thread){
+    //公式实现：recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice
+    t->recent_cpu = add_x_and_n(mul_x_by_y(div_x_by_y(mul_x_by_n(load_avg,2),add_x_and_n(mul_x_by_n(load_avg,2),1)),t->recent_cpu),t->nice);
+    change_priority(t,NULL);
+  }
+}
+
+//修改优先级
+void change_priority(struct thread *t,void *aux UNUSED){
+  if (t!=idle_thread){
+    //公式实现：priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+    t->priority=convert_x_to_zero_integer(sub_n_from_x(sub_y_from_x(convert_n_to_fixed_point(PRI_MAX),div_x_by_n(t->recent_cpu,4)),2*t->nice));
+    if (t->priority<PRI_MIN)
+      t->priority=PRI_MIN;
+    if (t->priority>PRI_MAX)
+      t->priority=PRI_MAX;
+  }
+}
+
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  //依据文档
+  //Returns 100 times the current thread's recent_cpu value, rounded to the nearest integer.
+  return convert_x_to_nearest_integer(mul_x_by_n(thread_current()->recent_cpu,100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -505,10 +557,14 @@ init_thread (struct thread *t, const char *name, int priority)
 
   memset (t, 0, sizeof *t);
 
-  //新增变量
+  //优先级调度
   t->base_priority=priority;
   list_init(&t->locks);
   t->lock_waiting=NULL;
+
+  //高级调度器
+  t->nice=0;
+  t->recent_cpu=convert_n_to_fixed_point(0);
 
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
