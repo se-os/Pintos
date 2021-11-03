@@ -457,12 +457,16 @@ void change_recent_cpu(struct thread *t,void *aux UNUSED){
 //修改优先级
 void change_priority(struct thread *t,void *aux UNUSED){
   if (t!=idle_thread){
+    int tmp;
     //公式实现：priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
-    t->priority=convert_x_to_zero_integer(sub_n_from_x(sub_y_from_x(convert_n_to_fixed_point(PRI_MAX),div_x_by_n(t->recent_cpu,4)),2*t->nice));
-    if (t->priority<PRI_MIN)
-      t->priority=PRI_MIN;
-    if (t->priority>PRI_MAX)
-      t->priority=PRI_MAX;
+    tmp=convert_x_to_zero_integer(sub_n_from_x(sub_y_from_x(convert_n_to_fixed_point(PRI_MAX),div_x_by_n(t->recent_cpu,4)),2*t->nice));
+    if (tmp<PRI_MIN)
+      tmp=PRI_MIN;
+    if (tmp>PRI_MAX)
+      tmp=PRI_MAX;
+    t->priority=tmp;
+    //每次更新优先级都对准备队列进行排序。
+    list_sort (&t->locks, lock_cmp_priority, NULL);
   }
 }
 

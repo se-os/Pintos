@@ -7,7 +7,7 @@
 //向0取整
 #define convert_x_to_zero_integer(x) ((x)/(f))
 //向最接近的取整
-#define convert_x_to_nearest_integer(x) ((x)>=0?((x)+(f)/2)/2:((x)-(f)/2)/2)
+#define convert_x_to_nearest_integer(x) ((x)>=0?((x)+(f)/2)/(f):((x)-(f)/2)/(f))
 //浮点数加法
 #define add_x_and_y(x,y) ((x)+(y))
 //浮点数减法
