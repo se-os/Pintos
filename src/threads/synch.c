@@ -57,6 +57,7 @@ sema_init (struct semaphore *sema, unsigned value)
    interrupts disabled, but if it sleeps then the next scheduled
    thread will probably turn interrupts back on. */
 void
+//P操作
 sema_down (struct semaphore *sema)
 {
   enum intr_level old_level;
@@ -68,7 +69,7 @@ sema_down (struct semaphore *sema)
   while (sema->value == 0)
     {
       //当前线程请求信号量发现为0，加入等待队列并阻塞
-      list_insert_ordered (&sema->waiters, &thread_current ()->elem, thread_cmp_priority, NULL);
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem, thread_priority_compare, NULL);
       thread_block ();
     }
   sema->value--;
@@ -105,7 +106,9 @@ sema_try_down (struct semaphore *sema)
    and wakes up one thread of those waiting for SEMA, if any.
 
    This function may be called from an interrupt handler. */
+
 void
+//V操作
 sema_up (struct semaphore *sema)
 {
   enum intr_level old_level;
@@ -114,16 +117,18 @@ sema_up (struct semaphore *sema)
 
   old_level = intr_disable ();
 
-  //信号量有等待线程
+  //信号量等待队列中仍有线程
   if (!list_empty (&sema->waiters))
   {
-    //排序
-    list_sort (&sema->waiters, thread_cmp_priority, NULL);
+    //维持信号量是一个优先级队列
+    list_sort (&sema->waiters, thread_priority_compare, NULL);
     //将队首线程唤醒
     thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
   }
-
+  
+  //更改信号量
   sema->value++;
+  //每次唤醒需要维护线程的就绪队列是一个优先级队列
   thread_yield ();
   intr_set_level (old_level);
 }
@@ -237,9 +242,10 @@ lock_acquire (struct lock *lock)
   {
     //线程获得该锁
     current_thread->lock_waiting = NULL;
+    //设置锁的最大优先级，这里采用了直接赋值
     lock->max_priority = current_thread->priority;
     //使当前线程持有该锁
-    thread_hold_the_lock (lock);
+    set_lock_holder (lock);
   }
 
   //更新该锁的占有线程为当前线程
@@ -283,9 +289,13 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   old_level=intr_disable();
-  if(!thread_mlfqs)
-    thread_remove_lock(lock);
-  
+  // 通过将锁移出队列实现释放锁
+  if(!thread_mlfqs){
+      //将一个锁从队列中删除，即锁已释放
+     list_remove (&lock->elem);
+     thread_update_priority (thread_current ());
+    }
+    
   lock->holder = NULL;
   sema_up (&lock->semaphore);
   intr_set_level(old_level);
@@ -372,12 +382,12 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  //若当前条件有等待线程
+  //若当前条件的等待队列中仍有线程
   if (!list_empty (&cond->waiters))
   {
-    //排序
-    list_sort (&cond->waiters, cond_sema_cmp_priority, NULL);
-    //把队首线程移出,信号量加一，转到信号量操作
+    //同lock队列，用list_sort维护condition队列为优先级队列
+    list_sort (&cond->waiters, cond_priority_compare, NULL);
+    //执行V操作，把队首线程移出,信号量加一
     sema_up (&list_entry (list_pop_front (&cond->waiters), struct semaphore_elem, elem)->semaphore);
   }
 }
@@ -398,16 +408,16 @@ cond_broadcast (struct condition *cond, struct lock *lock)
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
 }
-/* lock comparation function */
+/* 用于维护锁队列是优先级队列的比较函数 */
 bool
-lock_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+lock_priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
   return list_entry (a, struct lock, elem)->max_priority > list_entry (b, struct lock, elem)->max_priority;
 }
 
 /* cond sema comparation function */
 bool
-cond_sema_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+cond_priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
   struct semaphore_elem *sa = list_entry (a, struct semaphore_elem, elem);
   struct semaphore_elem *sb = list_entry (b, struct semaphore_elem, elem);

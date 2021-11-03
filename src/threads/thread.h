@@ -87,7 +87,7 @@ struct thread
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
-    int priority;                       /* Priority. */
+    int priority;                       /* Running priority. */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
@@ -102,9 +102,9 @@ struct thread
     unsigned magic;                     /* Detects stack overflow. */
     int64_t sleep_timer;/*用于计数线程被阻塞后经过的单位时间个数*/
     int64_t curtime;
-    int base_priority;/*用于存储被捐赠优先级前，线程原来的优先级*/
-    struct list locks;/*用于存储线程当前持有的锁*/
-    struct lock *lock_waiting;/*线程正在等待的锁*/
+    int original_priority;/*用于存储被捐赠优先级前，线程原来的优先级*/
+    struct list locks;/*所有该线程持有的锁*/
+    struct lock *lock_waiting;/*阻塞该线程的锁*/
     int nice;//高级调度器的nice值
     int64_t recent_cpu;//获取最近占用的cpu数
   };
@@ -156,8 +156,8 @@ void change_priority(struct thread *t,void *aux UNUSED);
 /*本函数用于检查线程的计数器，当计数器等于0时，代表需要唤醒，本函数在每次中断时调用*/
 void check_block(struct thread *t);
 // void blocked_thread_check (struct thread *t, void *aux UNUSED);
-bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-void thread_hold_the_lock (struct lock *);
+bool thread_priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+void set_lock_holder (struct lock *);
 void thread_remove_lock (struct lock *);
 void thread_donate_priority (struct thread *);
 void thread_update_priority (struct thread *);
