@@ -467,8 +467,6 @@ void change_priority(struct thread *t,void *aux UNUSED){
     if (tmp>PRI_MAX)
       tmp=PRI_MAX;
     t->priority=tmp;
-    //每次更新优先级都对准备队列进行排序。
-    list_sort (&t->locks, lock_priority_compare, NULL);
   }
 }
 
