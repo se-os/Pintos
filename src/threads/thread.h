@@ -104,7 +104,7 @@ struct thread
     int64_t curtime;
     int original_priority;/*用于存储被捐赠优先级前，线程原来的优先级*/
     struct list locks;/*所有该线程持有的锁*/
-    struct lock *lock_waiting;/*阻塞该线程的锁*/
+    struct lock *lock_waiting;/*阻塞该线程的锁,即该线程正在等待的锁*/
     int nice;//高级调度器的nice值
     int64_t recent_cpu;//获取最近占用的cpu数
   };
