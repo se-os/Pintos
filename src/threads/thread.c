@@ -705,10 +705,10 @@ void
 set_lock_holder(struct lock *lock)
 {
   enum intr_level old_level = intr_disable ();
-  /*锁队列需要是一个优先级队列，因此通过list_insert_ordered和判断函数lock_priority_compare实现优先级队列维护*/
+  /*当前线程的持有锁队列需要是一个优先级队列，因此通过list_insert_ordered和判断函数lock_priority_compare实现优先级队列维护*/
   list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_priority_compare, NULL);
 
-  //若出现有更高优先级线程请求该锁，进行阻塞，捐赠
+
   if (lock->max_priority > thread_current ()->priority)
   {
     thread_current ()->priority = lock->max_priority;
@@ -736,7 +736,7 @@ void
 thread_donate_priority (struct thread *t)
 {
   enum intr_level old_level = intr_disable ();
-  //其实这一步是获得捐赠，下面是一些后续调整
+  //先根据捐赠调整优先级，而后若当前线程已就绪，则推入就绪队列。
   thread_update_priority (t);
 
   if (t->status == THREAD_READY)
@@ -749,12 +749,12 @@ thread_donate_priority (struct thread *t)
 }
 
 /* Update priority. */
-//作用在于保证被更新的线程处于最高优先级
+//用于释放锁和请求锁的时候更新调整线程的优先级
 void
 thread_update_priority (struct thread *t)
 {
   enum intr_level old_level = intr_disable ();
-  //需要注意的是，该函数只更新线程的原始优先级，而不改变运行中的优先级
+  //需要注意的是，该函数只更新线程运行中的优先级,即priority优先级。
   int max_priority = t->original_priority;
   int lock_priority;
 
