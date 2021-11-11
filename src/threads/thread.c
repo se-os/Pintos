@@ -708,13 +708,6 @@ set_lock_holder(struct lock *lock)
   /*当前线程的持有锁队列需要是一个优先级队列，因此通过list_insert_ordered和判断函数lock_priority_compare实现优先级队列维护*/
   list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_priority_compare, NULL);
 
-
-  if (lock->max_priority > thread_current ()->priority)
-  {
-    thread_current ()->priority = lock->max_priority;
-    thread_yield ();
-  }
-
   intr_set_level (old_level);
 }
 
@@ -741,7 +734,7 @@ thread_donate_priority (struct thread *t)
 
   if (t->status == THREAD_READY)
   {
-    //若线程处于就绪状态，则将其从线程队列中删除，推入到就绪队列中
+    //若线程处于就绪状态，推入到就绪队列中
     list_remove (&t->elem);
     list_insert_ordered (&ready_list, &t->elem, thread_priority_compare, NULL);
   }
