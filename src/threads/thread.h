@@ -100,8 +100,10 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-    int exit_code                       /*退出码*/
-    
+    int exit_code;                      /*退出码*/
+    struct list child_list;             /*子进程队列*/
+    struct list_elem cp;                //子进程
+    tid_t P_tid;                        //父进程tid
   };
 
 /* If false (default), use round-robin scheduler.
