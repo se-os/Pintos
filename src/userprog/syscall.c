@@ -59,3 +59,12 @@ write(int fd_code,const void* buffer,unsigned size){
 
   return ret;
 }
+void
+close(int fd_code)
+{
+    struct fd *f = get_fd_by_code(fd_code);
+    if(f==NULL)return -1;
+    file_close(f->file);
+    list_remove(&f->fd_elem);
+    free(f);
+}
