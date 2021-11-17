@@ -104,6 +104,8 @@ struct thread
     struct list child_list;             /*子进程队列*/
     struct list_elem cp;                //子进程
     tid_t P_tid;                        //父进程tid
+    struct list fd_list;                
+    
   };
 
 /* If false (default), use round-robin scheduler.

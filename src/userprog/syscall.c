@@ -18,3 +18,17 @@ syscall_handler (struct intr_frame *f UNUSED)
   printf ("system call!\n");
   thread_exit ();
 }
+void
+exit(int status)
+{
+  struct list_elem *e;
+  struct thread *cur = thread_current ();
+  while (!list_empty(&cur->fd_list))
+  {
+    e = list_begin(&cur->fd_list);
+    close(list_entry(e, struct fd, elem)->num);
+  }
+  file_close(cur->execfile);
+  thread_current()->exit_code = status;
+  thread_exit();
+}
