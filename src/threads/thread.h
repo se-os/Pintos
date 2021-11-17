@@ -105,7 +105,7 @@ struct thread
     struct list_elem cp;                //子进程
     tid_t P_tid;                        //父进程tid
     struct list fd_list;                
-    
+    struct file* opened_file;
   };
 
 /* If false (default), use round-robin scheduler.

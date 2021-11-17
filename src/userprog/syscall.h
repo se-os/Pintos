@@ -8,7 +8,7 @@ void syscall_init (void);
 
 #endif /* userprog/syscall.h */
 struct fd{
-    int count;
+    int fd_code;
     struct file* file;
     struct list_elem fd_elem;
 
