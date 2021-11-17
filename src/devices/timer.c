@@ -7,7 +7,6 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-#include "threads/fixedPoint.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -61,7 +60,7 @@ timer_calibrate (void)
   /* Refine the next 8 bits of loops_per_tick. */
   high_bit = loops_per_tick;
   for (test_bit = high_bit >> 1; test_bit != high_bit >> 10; test_bit >>= 1)
-    if (!too_many_loops (loops_per_tick | test_bit))
+    if (!too_many_loops (high_bit | test_bit))
       loops_per_tick |= test_bit;
 
   printf ("%'"PRIu64" loops/s.\n", (uint64_t) loops_per_tick * TIMER_FREQ);
@@ -87,7 +86,7 @@ timer_elapsed (int64_t then)
 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
-/*void
+void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks ();
@@ -95,24 +94,8 @@ timer_sleep (int64_t ticks)
   ASSERT (intr_get_level () == INTR_ON);
   while (timer_elapsed (start) < ticks) 
     thread_yield ();
-}*/
-void
-timer_sleep (int64_t ticks) 
-{
-  if(ticks<=0)return;
-  else{
-    struct thread *cur;
-    enum intr_level old;
-    int64_t start =timer_ticks();
-    ASSERT (intr_get_level () == INTR_ON);
-    cur=thread_current();
-    cur->curtime=start;
-    cur->sleep_timer=start+ticks;
-    old=intr_disable();
-    thread_block();/*阻塞线程避免忙等待*/
-    intr_set_level(old);
-  }
 }
+
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
    turned on. */
 void
@@ -189,18 +172,6 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-  blocked_foreach();
-
-  if(thread_mlfqs){
-    increase_recent_cpu();
-    if (ticks%TIMER_FREQ==0){
-      change_load_avg();
-      thread_foreach(change_recent_cpu,NULL);
-    }
-    else if(ticks%4==0){
-      change_priority(thread_current(),NULL);
-    }
-  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

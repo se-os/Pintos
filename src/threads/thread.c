@@ -11,7 +11,6 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/fixedPoint.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -59,8 +58,6 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
-int load_avg;
-
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -73,6 +70,7 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -95,8 +93,6 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
 
-  
-
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -109,12 +105,11 @@ thread_init (void)
 void
 thread_start (void) 
 {
-  
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
-  load_avg=convert_n_to_fixed_point(0);
+
   /* Start preemptive thread scheduling. */
   intr_enable ();
 
@@ -176,7 +171,8 @@ thread_create (const char *name, int priority,
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
   tid_t tid;
-  enum intr_level old_level; 
+  enum intr_level old_level;
+
   ASSERT (function != NULL);
 
   /* Allocate thread. */
@@ -187,8 +183,12 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-  old_level= intr_disable();
-  
+
+  /* Prepare thread for first run by initializing its stack.
+     Do this atomically so intermediate values for the 'stack' 
+     member cannot be observed. */
+  old_level = intr_disable ();
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -204,14 +204,10 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
-  intr_set_level(old_level);
-  t->sleep_timer=0;/*初始化计数器*/
-  t->curtime=0;
+  intr_set_level (old_level);
+
   /* Add to run queue. */
   thread_unblock (t);
-  /*创建线程时，也进行对优先级的判断，与手动设置优先级时进行的操作一样*/
-  if(thread_current()->priority<priority)
-    thread_yield();
 
   return tid;
 }
@@ -249,8 +245,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  // list_push_back (&ready_list, &t->elem);/*将线程放入就绪队列队尾*/
-  list_insert_ordered (&ready_list, &t->elem, (list_less_func *) &thread_priority_compare, NULL);/*放入队列并排序*/
+  list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -321,7 +316,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_insert_ordered (&ready_list, &cur->elem, (list_less_func *) &thread_priority_compare, NULL);/*放入队列并排序*/
+    list_push_back (&ready_list, &cur->elem);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -342,142 +337,51 @@ thread_foreach (thread_action_func *func, void *aux)
       struct thread *t = list_entry (e, struct thread, allelem);
       func (t, aux);
     }
-}/*中断时执行所有线程的检测函数*/
-
-void
-blocked_foreach ()
-{
-  struct list_elem *e;
-
-  ASSERT (intr_get_level () == INTR_OFF);
-
-  for (e = list_begin (&all_list); e != list_end (&all_list);
-       e = list_next (e))
-    {
-      struct thread *t = list_entry (e, struct thread, allelem);
-      check_block (t);
-    }
-}
-
-/*本函数用于检查线程的计数器*/
-void
-check_block(struct thread *t){
-
-   if(t->status==THREAD_BLOCKED&&t->sleep_timer>t->curtime){
-     t->curtime++;
-     if(t->sleep_timer==t->curtime)
-       thread_unblock(t);
-   }
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
-thread_set_priority (int new_priority)
+thread_set_priority (int new_priority) 
 {
-  if (thread_mlfqs)
-    return;
-
-  enum intr_level old_level = intr_disable ();
-
-  struct thread *current_thread = thread_current ();
-  int old_priority = current_thread->priority;
-  //注意，手动设置优先级直接修改的是原始优先级
-  current_thread->original_priority = new_priority;
-
-  
-  if (list_empty (&current_thread->locks) || new_priority > old_priority)
-  {
-    /*此处需要同时修改运行时优先级，因为该线程未持有锁，运行时优先级即为常时优先级，而当线程持有锁时，其运行时优先级不会发生改变*/
-    current_thread->priority = new_priority;
-    /*若更新后的优先级比原优先级要高，则需要维护就绪队列为优先级队列*/
-    thread_yield ();
-  }
-
-  intr_set_level (old_level);
+  thread_current ()->priority = new_priority;
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current()->priority;
+  return thread_current ()->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
 void
 thread_set_nice (int nice UNUSED) 
 {
-  thread_current()->nice=nice;
-  change_priority(thread_current(),NULL);
-  thread_yield();
+  /* Not yet implemented. */
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  return thread_current()->nice;
+  /* Not yet implemented. */
+  return 0;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  //根据文档要求
-  //Returns 100 times the current system load average, rounded to the nearest integer.
-  return convert_x_to_nearest_integer(mul_x_by_n(load_avg,100));
+  /* Not yet implemented. */
+  return 0;
 }
-
-//recent_cpu++
-void 
-increase_recent_cpu(void){
-  if(thread_current()!=idle_thread){
-    thread_current()->recent_cpu=add_x_and_n(thread_current()->recent_cpu,1);
-  }
-}
-
-//修改load_avg
-void 
-change_load_avg(void){
-  int ready=list_size(&ready_list);
-  if(thread_current()!=idle_thread){
-    ready++;
-  }
-  //公式实现；load_avg = (59/60)\times*load_avg + (1/60)\times*ready_threads
-  load_avg=add_x_and_y(div_x_by_n(mul_x_by_n(load_avg,59),60),div_x_by_n(convert_n_to_fixed_point(ready),60));
-}
-
-//修改recent_cpu
-void change_recent_cpu(struct thread *t,void *aux UNUSED){
-  if (t!=idle_thread){
-    //公式实现：recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice
-    t->recent_cpu = add_x_and_n(mul_x_by_y(div_x_by_y(mul_x_by_n(load_avg,2),add_x_and_n(mul_x_by_n(load_avg,2),1)),t->recent_cpu),t->nice);
-    change_priority(t,NULL);
-  }
-}
-
-//修改优先级
-void change_priority(struct thread *t,void *aux UNUSED){
-  if (t!=idle_thread){
-    int tmp;
-    //公式实现：priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
-    tmp=convert_x_to_zero_integer(sub_n_from_x(sub_y_from_x(convert_n_to_fixed_point(PRI_MAX),div_x_by_n(t->recent_cpu,4)),2*t->nice));
-    if (tmp<PRI_MIN)
-      tmp=PRI_MIN;
-    if (tmp>PRI_MAX)
-      tmp=PRI_MAX;
-    t->priority=tmp;
-  }
-}
-
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  //依据文档
-  //Returns 100 times the current thread's recent_cpu value, rounded to the nearest integer.
-  return convert_x_to_nearest_integer(mul_x_by_n(thread_current()->recent_cpu,100));
+  /* Not yet implemented. */
+  return 0;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -560,23 +464,12 @@ init_thread (struct thread *t, const char *name, int priority)
   ASSERT (name != NULL);
 
   memset (t, 0, sizeof *t);
-
-  /*优先级调度，依次设置原始优先级（区分运行时优先级）、持有锁列表、阻塞该进程的锁（当前为空）*/
-  t->original_priority=priority;
-  list_init(&t->locks);
-  t->lock_waiting=NULL;
-
-  //高级调度器
-  t->nice=0;
-  t->recent_cpu=convert_n_to_fixed_point(0);
-
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-
-  list_insert_ordered (&all_list, &t->allelem, (list_less_func *) &thread_priority_compare, NULL);/*放入队列并排序*/
+  list_push_back (&all_list, &t->allelem);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -692,83 +585,3 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
-/* Priority compare function. */
-bool
-thread_priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
-{
-  return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
-}
-
-/* Let thread hold a lock */
-void
-set_lock_holder(struct lock *lock)
-{
-  enum intr_level old_level = intr_disable ();
-  /*锁队列需要是一个优先级队列，因此通过list_insert_ordered和判断函数lock_priority_compare实现优先级队列维护*/
-  list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_priority_compare, NULL);
-
-  //若出现有更高优先级线程请求该锁，进行阻塞，捐赠
-  if (lock->max_priority > thread_current ()->priority)
-  {
-    thread_current ()->priority = lock->max_priority;
-    thread_yield ();
-  }
-
-  intr_set_level (old_level);
-}
-
-/* Remove a lock. */
-
-/*
-void
-thread_remove_lock (struct lock *lock)
-{
-  enum intr_level old_level = intr_disable ();
-  //将一个锁从队列中删除，即锁已释放
-  list_remove (&lock->elem);
-  thread_update_priority (thread_current ());
-  intr_set_level (old_level);
-}*/
-
-/* Donate current priority to thread t. */
-void
-thread_donate_priority (struct thread *t)
-{
-  enum intr_level old_level = intr_disable ();
-  //其实这一步是获得捐赠，下面是一些后续调整
-  thread_update_priority (t);
-
-  if (t->status == THREAD_READY)
-  {
-    //若线程处于就绪状态，则将其从线程队列中删除，推入到就绪队列中
-    list_remove (&t->elem);
-    list_insert_ordered (&ready_list, &t->elem, thread_priority_compare, NULL);
-  }
-  intr_set_level (old_level);
-}
-
-/* Update priority. */
-//作用在于保证被更新的线程处于最高优先级
-void
-thread_update_priority (struct thread *t)
-{
-  enum intr_level old_level = intr_disable ();
-  //需要注意的是，该函数只更新线程的原始优先级，而不改变运行中的优先级
-  int max_priority = t->original_priority;
-  int lock_priority;
-
-  //若当前线程还持有锁，更新就绪队列
-  if (!list_empty (&t->locks))
-  {
-    //维护该线程持有锁的队列是一个优先级队列，用list_sort函数
-    list_sort (&t->locks, lock_priority_compare, NULL);
-    /* 在lock_acquire中，对锁的优先级使用直接赋值，在这个函数中，将锁的优先级进行更新 */
-    lock_priority = list_entry (list_front (&t->locks), struct lock, elem)->max_priority;
-    if (lock_priority > max_priority)
-      max_priority = lock_priority;
-  }
-  //线程的优先级更新为，所持有的锁队列首（即锁优先级最高）的锁的优先级
-  t->priority = max_priority;
-  intr_set_level (old_level);
-}
