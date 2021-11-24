@@ -92,6 +92,7 @@ int
 process_wait (tid_t child_tid UNUSED) 
 {
   return -1;
+  sleep(1000);
 }
 
 /* Free the current process's resources. */
