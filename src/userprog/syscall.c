@@ -8,11 +8,11 @@ static void syscall_handler(struct intr_frame *);
 
 void syscall_init(void)
 {
-  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
   syscalls[SYS_EXEC] = &sys_exec;
   syscalls[SYS_HALT] = &sys_halt;
   syscalls[SYS_EXIT] = &sys_exit;
- 
+
   // /* Our implementation for Task3: initialize create, remove, open, filesize, read, write, seek, tell, and close */
   syscalls[SYS_WAIT] = &sys_wait;
   syscalls[SYS_CREATE] = &sys_create;
@@ -21,7 +21,7 @@ void syscall_init(void)
   syscalls[SYS_WRITE] = &sys_write;
   syscalls[SYS_SEEK] = &sys_seek;
   syscalls[SYS_TELL] = &sys_tell;
-  syscalls[SYS_CLOSE] =&sys_close;
+  syscalls[SYS_CLOSE] = &sys_close;
   syscalls[SYS_READ] = &sys_read;
   syscalls[SYS_FILESIZE] = &sys_filesize;
 }
@@ -29,18 +29,19 @@ void syscall_init(void)
 static void
 syscall_handler(struct intr_frame *f UNUSED)
 {
-  int *p=f->esp;
-  check_pointer(p,1);
-  int type=*(int *)p;
-  if(p==NULL||type<=0||type>=MAX_CALL)
+  int *p = f->esp;
+  check_pointer(p, 1);
+  int type = *(int *)p;
+  if (p == NULL || type <= 0 || type >= MAX_CALL)
     exit(-1);
-  syscalls[type](f);//根据调用号调用系统调用函数
+  syscalls[type](f); //根据调用号调用系统调用函数
   //printf ("system call!\n");
   //thread_exit ();
 }
-void check_pointer(void* esp,int num){
-  for(int i=0;i<num*4;i++)
-    if(!is_user_vaddr(esp+i)||!pagedir_get_page (thread_current()->pagedir, esp+i))
+void check_pointer(void *esp, int num)
+{
+  for (int i = 0; i < num * 4; i++)
+    if (!is_user_vaddr(esp + i) || !pagedir_get_page(thread_current()->pagedir, esp + i))
       exit(-1);
   return;
 }
@@ -60,25 +61,24 @@ get_fd_by_code(int fd_code)
   }
   return NULL;
 }
-void 
-sys_exit(struct intr_frame *f)
+void sys_exit(struct intr_frame *f)
 {
-  int *p=f->esp+4;
-  check_pointer(p,1);
-  int status = *(int*)p;
+  int *p = f->esp + 4;
+  check_pointer(p, 1);
+  int status = *(int *)p;
   exit(status);
 }
-void 
-sys_write(struct intr_frame *f)
+void sys_write(struct intr_frame *f)
 {
-  int *p=f->esp+4;
-  check_pointer(p,3);
-  int fd = *(int*)p;
-  void *buffer = *(char**)(f->esp+8);
-  unsigned size = *(unsigned*)(f->esp+12);
-  if(buffer==NULL)exit(-1);
-  check_pointer(buffer,1);
-  f->eax = write(fd,buffer,size);
+  int *p = f->esp + 4;
+  check_pointer(p, 3);
+  int fd = *(int *)p;
+  void *buffer = *(char **)(f->esp + 8);
+  unsigned size = *(unsigned *)(f->esp + 12);
+  if (buffer == NULL)
+    exit(-1);
+  check_pointer(buffer, 1);
+  f->eax = write(fd, buffer, size);
 }
 void exit(int status)
 {
@@ -109,9 +109,9 @@ int write(int fd_code, const void *buffer, unsigned size)
   if (f == NULL)
     return -1;
   //向文件进行写，得到返回码，即实际写入的字节数
-  lock_acquire(&file_lock);
+  lock_acquire(&f->file_lock);
   int ret = file_write(f->file, buffer, size);
-  lock_release(&file_lock);
+  lock_release(&f->file_lock);
   return ret;
 }
 
