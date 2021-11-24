@@ -10,13 +10,40 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  syscalls[SYS_EXEC] = &sys_exec;
+  syscalls[SYS_HALT] = &sys_halt;
+  syscalls[SYS_EXIT] = &sys_exit;
+ 
+  // /* Our implementation for Task3: initialize create, remove, open, filesize, read, write, seek, tell, and close */
+  syscalls[SYS_WAIT] = &sys_wait;
+  syscalls[SYS_CREATE] = &sys_create;
+  syscalls[SYS_REMOVE] = &sys_remove;
+  syscalls[SYS_OPEN] = &sys_open;
+  syscalls[SYS_WRITE] = &sys_write;
+  syscalls[SYS_SEEK] = &sys_seek;
+  syscalls[SYS_TELL] = &sys_tell;
+  syscalls[SYS_CLOSE] =&sys_close;
+  syscalls[SYS_READ] = &sys_read;
+  syscalls[SYS_FILESIZE] = &sys_filesize;
 }
 
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  printf ("system call!\n");
-  thread_exit ();
+  int *p=f->esp;
+  check_pointer(p,1);
+  int type=*(int *)p;
+  if(p==NULL||type<=0||type>=MAX_CALL)
+    exit(-1);
+  syscalls[type](f);//根据调用号调用系统调用函数
+  //printf ("system call!\n");
+  //thread_exit ();
+}
+void check_pointer(void* esp,int num){
+  for(int i=0;i<num*4;i++)
+    if(!is_user_vaddr(esp+i)||!pagedir_get_page (thread_current()->pagedir, esp+i))
+      exit(-1);
+  return;
 }
 struct fd*
 get_fd_by_code(int fd_code)
