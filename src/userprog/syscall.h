@@ -10,7 +10,8 @@ void syscall_init(void);
 #define MAX_CALL 20
 static void (*syscalls[MAX_CALL])(struct intr_frame *);//根据调用号调用syscall
 
-void check_pointer(void *esp,int num);
+void check_pointer(void *esp,int num);//检查esp指针是否合法
+
 void sys_halt(void);
 void sys_exit(struct intr_frame *);
 void sys_exec(struct intr_frame *);
@@ -32,8 +33,9 @@ struct fd
     struct file *file;        //该描述符指向的文件
     struct list_elem fd_elem; //代表fd的对象
 };
+struct lock file_lock;
 //退出
 void exit(int);
-
 //写
 int write(int, const void *, unsigned);
+

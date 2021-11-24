@@ -60,7 +60,26 @@ get_fd_by_code(int fd_code)
   }
   return NULL;
 }
-
+void 
+sys_exit(struct intr_frame *f)
+{
+  int *p=f->esp+4;
+  check_pointer(p,1);
+  int status = *(int*)p;
+  exit(status);
+}
+void 
+sys_write(struct intr_frame *f)
+{
+  int *p=f->esp+4;
+  check_pointer(p,3);
+  int fd = *(int*)p;
+  void *buffer = *(char**)(f->esp+8);
+  unsigned size = *(unsigned*)(f->esp+12);
+  if(buffer==NULL)exit(-1);
+  check_pointer(buffer,1);
+  f->eax = write(fd,buffer,size);
+}
 void exit(int status)
 {
   struct list_elem *e;
@@ -90,8 +109,9 @@ int write(int fd_code, const void *buffer, unsigned size)
   if (f == NULL)
     return -1;
   //向文件进行写，得到返回码，即实际写入的字节数
+  lock_acquire(&file_lock);
   int ret = file_write(f->file, buffer, size);
-
+  lock_release(&file_lock);
   return ret;
 }
 
