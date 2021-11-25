@@ -40,7 +40,9 @@ tid_t process_execute(const char *file_name)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, PGSIZE);
 
-  char *save_ptr;
+  //调用lib/string.c中的字符串分割函数，实现参数分割
+  char *save_ptr = NULL;
+  //按空格分割字符串
   char *new_file_name = strtok_r(file_name, " ", &save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
@@ -64,12 +66,73 @@ start_process(void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load(file_name, &if_.eip, &if_.esp);
+
+  //防止修改到真正的file_name
+  char *tmp_file_name = malloc(strlen(file_name) + 1);
+  strlcpy(tmp_file_name, file_name, strlen(file_name) + 1);
+  char *save_ptr = NULL;
+  tmp_file_name = strtok_r(tmp_file_name, " ", &save_ptr);
+
+  success = load(tmp_file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page(file_name);
   if (!success)
     thread_exit();
+
+  //参数传递（压栈）
+  //输入的参数地址，数量不超过128
+  int argv[128];
+  //存储参数数量
+  int argc = 0;
+  //自右向左存参数
+  for (; tmp_file_name != NULL; tmp_file_name = strtok_r(NULL, " ", &save_ptr))
+  {
+    //这一步是为了获取下一个参数名，详见strtok_r函数中对第一个参数s=NULL的处理，实际上就是将指针指向下一个被分割出来的参数
+
+    //将栈顶指针指向该参数的末尾，留出存放空间，+1是由于字符串尾部有“\0”，也占一个字节
+    if_.esp -= (strlen(tmp_file_name) + 1);
+    //将该参数复制预留的空间
+    strlcpy(if_.esp, tmp_file_name, strlen(tmp_file_name) + 1);
+    //存储参数地址，增加参数数量
+    argv[argc] = (int)if_.esp;
+    argc++;
+  }
+  //word-align,字对齐使栈顶指针指向4的倍数的位置
+  while ((int)if_.esp % 4 != 0)
+  {
+    if_.esp--;
+  }
+  //由于参数地址是用int存的，这里用int指针方便后续修改和操作
+  int *tmp_if_esp = (int *)if_.esp;
+
+  //由于是int，-1相当于char的-4
+  //argv[argc]
+  tmp_if_esp--;
+  *tmp_if_esp = 0;
+
+  int index;
+  //存argv地址
+  for (index = argc - 1; index >= 0; index--)
+  {
+    tmp_if_esp--;
+    *tmp_if_esp = argv[index];
+  }
+  //argv
+  tmp_if_esp--;
+  *tmp_if_esp = (int)(tmp_if_esp + 1);
+  //argc
+  tmp_if_esp--;
+  *tmp_if_esp = argc;
+  //return address
+  tmp_if_esp--;
+  *tmp_if_esp = 0;
+
+  //将变化更新到栈上
+  if_.esp = tmp_if_esp;
+
+  //释放tmp_file_name的空间
+  free(tmp_file_name);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
