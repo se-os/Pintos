@@ -156,9 +156,9 @@ int write(int fd_code, const void *buffer, unsigned size)
   if (f == NULL)
     return -1;
   //向文件进行写，得到返回码，即实际写入的字节数
-  lock_acquire(&f->file_lock);
+  lock_acquire(&file_lock);
   int ret = file_write(f->file, buffer, size);
-  lock_release(&f->file_lock);
+  lock_release(&file_lock);
   return ret;
 }
 
