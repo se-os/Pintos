@@ -1,4 +1,9 @@
 {
     "editor.formatOnSave": true,
     "C_Cpp.formatting": "clangFormat",
+    "files.associations": {
+        "*.inc": "c",
+        "*.tcc": "c",
+        "fstream": "c"
+    },
 }

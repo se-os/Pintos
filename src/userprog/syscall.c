@@ -3,27 +3,74 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "devices/shutdown.h"
+#include "userprog/process.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "devices/input.h"
+#include "threads/vaddr.h"
+#include "threads/synch.h"
+#include "pagedir.h"
+#include <string.h>
+#include "debug.h"
 
 static void syscall_handler(struct intr_frame *);
+struct lock file_lock;
+struct list file_list;
+#define MAX_CALL 20
+static void (*syscalls[MAX_CALL])(struct intr_frame *);//根据调用号调用syscall
 
+void check_pointer(void *esp,int num);//检查esp指针是否合法
+
+void sys_halt(void);
+void sys_exit(struct intr_frame *);
+void sys_exec(struct intr_frame *);
+void sys_wait(struct intr_frame *);
+void sys_create(struct intr_frame *);
+void sys_remove(struct intr_frame *);
+void sys_open(struct intr_frame *);
+void sys_filesize(struct intr_frame *);
+void sys_read(struct intr_frame *);
+void sys_write(struct intr_frame *);
+void sys_seek(struct intr_frame *);
+void sys_tell(struct intr_frame *);
+void sys_close(struct intr_frame *);
+
+//文件描述符
+struct fd
+{
+    int fd_code;              //文件描述符的值
+    struct file *file;        //该描述符指向的文件
+    struct list_elem fd_elem; //代表fd的对象
+};
+
+//退出
+void exit(int);
+//写
+int write(int, const void *, unsigned);
+void close(int);
 void syscall_init(void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  syscalls[SYS_EXEC] = &sys_exec;
-  syscalls[SYS_HALT] = &sys_halt;
+  lock_init(&file_lock);
+  list_init(&file_list);
+  //初始化系统调用列表
+  //syscalls[SYS_EXEC] = &sys_exec;
+  //syscalls[SYS_HALT] = &sys_halt;
   syscalls[SYS_EXIT] = &sys_exit;
- 
-  // /* Our implementation for Task3: initialize create, remove, open, filesize, read, write, seek, tell, and close */
-  syscalls[SYS_WAIT] = &sys_wait;
-  syscalls[SYS_CREATE] = &sys_create;
-  syscalls[SYS_REMOVE] = &sys_remove;
-  syscalls[SYS_OPEN] = &sys_open;
+  //syscalls[SYS_WAIT] = &sys_wait;
+  //syscalls[SYS_CREATE] = &sys_create;
+  //syscalls[SYS_REMOVE] = &sys_remove;
+  //syscalls[SYS_OPEN] = &sys_open;
   syscalls[SYS_WRITE] = &sys_write;
-  syscalls[SYS_SEEK] = &sys_seek;
-  syscalls[SYS_TELL] = &sys_tell;
-  syscalls[SYS_CLOSE] =&sys_close;
-  syscalls[SYS_READ] = &sys_read;
-  syscalls[SYS_FILESIZE] = &sys_filesize;
+  //syscalls[SYS_SEEK] = &sys_seek;
+  //syscalls[SYS_TELL] = &sys_tell;
+  //syscalls[SYS_CLOSE] =&sys_close;
+  //syscalls[SYS_READ] = &sys_read;
+  //syscalls[SYS_FILESIZE] = &sys_filesize;
+
+  
+
 }
 
 static void

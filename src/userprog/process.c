@@ -17,6 +17,9 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
+#include "devices/timer.h"
+#include "syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
@@ -93,7 +96,7 @@ start_process(void *file_name_)
 int process_wait(tid_t child_tid UNUSED)
 {
   //用于评测
-  sleep(1000);
+  timer_sleep(10000);
   return -1;
 }
 
@@ -435,7 +438,7 @@ setup_stack(void **esp)
     success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
     if (success)
       //跳过参数传递
-      *esp = PHYS_BASE - 12;
+      *esp = PHYS_BASE;
     else
       palloc_free_page(kpage);
   }
