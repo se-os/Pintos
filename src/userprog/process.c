@@ -30,25 +30,47 @@ static bool load(const char *cmdline, void (**eip)(void), void **esp);
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute(const char *file_name)
 {
+  // printf("%s process_execute\n", file_name);
+  // printf("address %p", &file_name);
   char *fn_copy;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page(0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-  strlcpy(fn_copy, file_name, PGSIZE);
-
-  //调用lib/string.c中的字符串分割函数，实现参数分割
-  char *save_ptr = NULL;
-  //按空格分割字符串
-  char *new_file_name = strtok_r(file_name, " ", &save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create(new_file_name, PRI_DEFAULT, start_process, fn_copy);
+  fn_copy = malloc(strlen(file_name) + 1);
+  if (fn_copy == NULL)
+    return TID_ERROR;
+  strlcpy(fn_copy, file_name, strlen(file_name) + 1);
+  // printf("address %p\n", &file_name);
+  // printf("%s get fn_copy\n", fn_copy);
+  /* Make a copy of FILE_NAME.
+     Otherwise there's a page fault*/
+  char *token = malloc(strlen(file_name) + 1);
+  if (token == NULL)
+  {
+    free(fn_copy);
+    return TID_ERROR;
+  }
+  strlcpy(token, file_name, strlen(file_name) + 1);
+  // printf("address %p\n", &file_name);
+  // printf("%s get another copy token\n", token);
+  /* Create a new thread to execute FILE_NAME. */
+  char *save_ptr = NULL;
+  token = strtok_r(token, " ", &save_ptr);
+  // printf("get token %s\n", token);
+  // printf("address fn_copy:%p\taddress token:%p\n", &fn_copy, &token);
+  tid = thread_create(token, PRI_DEFAULT, start_process, fn_copy);
+  // printf("start free\n");
+  free(token);
+  // printf("free success\n");
+
   if (tid == TID_ERROR)
-    palloc_free_page(fn_copy);
+  {
+    free(fn_copy);
+    return tid;
+  }
   return tid;
 }
 
@@ -58,6 +80,8 @@ static void
 start_process(void *file_name_)
 {
   char *file_name = file_name_;
+  // printf("address %p\n", &file_name_);
+  // printf("tid:%d , name:%s , start process\n", thread_current()->tid, file_name, file_name);
   struct intr_frame if_;
   bool success;
 
@@ -67,73 +91,58 @@ start_process(void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-  //防止修改到真正的file_name
-  char *tmp_file_name = malloc(strlen(file_name) + 1);
-  strlcpy(tmp_file_name, file_name, strlen(file_name) + 1);
+  /* Make a copy of FILE_NAME.
+     Otherwise there's a page fault*/
+  char *token = malloc(strlen(file_name) + 1);
+  strlcpy(token, file_name, strlen(file_name) + 1);
   char *save_ptr = NULL;
-  tmp_file_name = strtok_r(tmp_file_name, " ", &save_ptr);
+  token = strtok_r(token, " ", &save_ptr);
 
-  success = load(tmp_file_name, &if_.eip, &if_.esp);
+  /* 加载用户进程的eip和esp eip:执行指令地址 esp:栈顶地址 */
+  success = load(token, &if_.eip, &if_.esp);
+  // printf("set success false\n");
+  // success = false;
 
   /* If load failed, quit. */
-  palloc_free_page(file_name);
   if (!success)
-    thread_exit();
-
-  //参数传递（压栈）
-  //输入的参数地址，数量不超过128
-  int argv[128];
-  //存储参数数量
-  int argc = 0;
-  //自右向左存参数
-  for (; tmp_file_name != NULL; tmp_file_name = strtok_r(NULL, " ", &save_ptr))
   {
-    //这一步是为了获取下一个参数名，详见strtok_r函数中对第一个参数s=NULL的处理，实际上就是将指针指向下一个被分割出来的参数
-
-    //将栈顶指针指向该参数的末尾，留出存放空间，+1是由于字符串尾部有“\0”，也占一个字节
-    if_.esp -= (strlen(tmp_file_name) + 1);
-    //将该参数复制预留的空间
-    strlcpy(if_.esp, tmp_file_name, strlen(tmp_file_name) + 1);
-    //存储参数地址，增加参数数量
-    argv[argc] = (int)if_.esp;
-    argc++;
+    exit(-1);
   }
-  //word-align,字对齐使栈顶指针指向4的倍数的位置
-  while ((int)if_.esp % 4 != 0)
+
+  /* 参数传递 */
+  char *esp = (char *)if_.esp; // 维护栈顶
+  int argv[128];               // 存储的参数地址
+  int argc = 0, tokenlen = 0;  // argc:参数数量 tokenlen:token长度
+  for (; token != NULL; token = strtok_r(NULL, " ", &save_ptr))
   {
-    if_.esp--;
+    tokenlen = strlen(token) + 1;      //'(token)\0'
+    esp -= tokenlen;                   // decrements the stack pointer
+    strlcpy(esp, token, tokenlen + 1); // right-to-left order
+    argv[argc++] = (int)esp;
   }
-  //由于参数地址是用int存的，这里用int指针方便后续修改和操作
-  int *tmp_if_esp = (int *)if_.esp;
-
-  //由于是int，-1相当于char的-4
-  //argv[argc]
-  tmp_if_esp--;
-  *tmp_if_esp = 0;
-
-  int index;
-  //存argv地址
-  for (index = argc - 1; index >= 0; index--)
+  while ((int)esp % 4 != 0)
+  { // word-align
+    esp--;
+  }
+  int *tmp = (int *)esp; // 接下来存argv地址
+  tmp--;
+  *tmp = 0; // argv[argc+1]
+  tmp--;
+  int i;
+  for (i = argc - 1; i >= 0; i--)
   {
-    tmp_if_esp--;
-    *tmp_if_esp = argv[index];
+    *tmp = argv[i];
+    tmp--;
   }
-  //argv
-  tmp_if_esp--;
-  *tmp_if_esp = (int)(tmp_if_esp + 1);
-  //argc
-  tmp_if_esp--;
-  *tmp_if_esp = argc;
-  //return address
-  tmp_if_esp--;
-  *tmp_if_esp = 0;
-
-  //将变化更新到栈上
-  if_.esp = tmp_if_esp;
-
-  //释放tmp_file_name的空间
-  free(tmp_file_name);
-
+  *tmp = (int)(tmp + 1); // argv
+  tmp--;
+  *tmp = argc; // argc;
+  tmp--;
+  *tmp = 0;      // return address
+  if_.esp = tmp; // 栈更新
+  // printf("start free\n");
+  free(file_name);
+  // printf("free success\n");
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -159,7 +168,7 @@ start_process(void *file_name_)
 int process_wait(tid_t child_tid UNUSED)
 {
   //用于评测
-  timer_sleep(10000);
+  timer_sleep(1000);
   return -1;
 }
 
@@ -500,8 +509,8 @@ setup_stack(void **esp)
   {
     success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
     if (success)
-      //跳过参数传递
-      *esp = PHYS_BASE;
+      //避免越界
+      *esp = PHYS_BASE - 12;
     else
       palloc_free_page(kpage);
   }
