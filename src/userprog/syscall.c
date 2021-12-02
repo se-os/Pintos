@@ -117,45 +117,17 @@ get_fd_by_code(int fd_code)
   }
   return NULL;
 }
+void sys_halt(void)
+{
+  shutdown_power_off();
+}
+
 void sys_exit(struct intr_frame *f)
 {
-  int *p = f->esp + 4;
+  uint32_t *p = f->esp + 4;
   check_pointer(p, 1);
-  int status = *(int *)p;
+  int status = *bn p;
   exit(status);
-}
-void sys_write(struct intr_frame *f)
-{
-  // printf("start write\n");
-  int *p = f->esp + 4;
-  // uint32_t *user_ptr = f->esp;
-  // *user_ptr++;
-  // int fd_test = *user_ptr;
-  // printf("finish int *p = f->esp + 4\n");
-  check_pointer(p, 3);
-  // printf("finish check_pointer(p, 3)\n");
-  int fd = *(int *)(f->esp + 4);
-  // int fd = *(int *)(f->esp);
-  // printf("fd_code: %d\n", fd);
-  // printf("fd_test: %d\n", fd_test);
-  // int fd = *(int *)p;
-  // printf("finish int fd = *(int *)p\n");
-  void *buffer = *(char **)(f->esp + 8);
-  // printf("finish void *buffer = *(char **)(f->esp + 8)\n");
-  unsigned size = *(unsigned *)(f->esp + 12);
-  // printf("finish unsigned size = *(unsigned *)(f->esp + 12)\n");
-  if (buffer == NULL)
-  {
-    // printf("buffer == NULL!\n");
-    exit(-1);
-  }
-  // printf("buffer != NULL!\n");
-  check_pointer(buffer, 1);
-  // printf("test exit\n");
-  // exit(-1);
-  // printf("jump check_pointer(buffer, 1)\n");
-  // printf("finish check_pointer(buffer, 1)\n");
-  f->eax = write(fd, buffer, size);
 }
 void exit(int status)
 {
@@ -177,6 +149,53 @@ void exit(int status)
   // printf("try\n");
   thread_exit();
 }
+
+void sys_exec(struct intr_frame *f)
+{
+   uint32_t *p = f->esp + 4;
+   check_pointer(p,1);
+   char* ptr = *(char**)p;
+   if(ptr == NULL)exit(-1);
+   check_pointer(ptr,1);
+   f->eax = process_execute(ptr);
+}
+
+void sys_write(struct intr_frame *f)
+{
+  // printf("start write\n");
+  uint32_t *p = f->esp + 4;
+  // uint32_t *user_ptr = f->esp;
+  // *user_ptr++;
+  // int fd_test = *user_ptr;
+  // printf("finish int *p = f->esp + 4\n");
+  check_pointer(p, 3);
+  // printf("finish check_pointer(p, 3)\n");
+  int fd = *p++;
+  // int fd = *(int *)(f->esp);
+  // printf("fd_code: %d\n", fd);
+  // printf("fd_test: %d\n", fd_test);
+  // int fd = *(int *)p;
+  // printf("finish int fd = *(int *)p\n");
+  void *buffer = *(char **)p++;
+  // printf("finish void *buffer = *(char **)(f->esp + 8)\n");
+  off_t size = *p;
+  // printf("finish unsigned size = *(unsigned *)(f->esp + 12)\n");
+  if (buffer == NULL)
+  {
+    // printf("buffer == NULL!\n");
+    exit(-1);
+  }
+  // printf("buffer != NULL!\n");
+  check_pointer(buffer, 1);
+  // printf("test exit\n");
+  // exit(-1);
+  // printf("jump check_pointer(buffer, 1)\n");
+  // printf("finish check_pointer(buffer, 1)\n");
+  f->eax = write(fd, buffer, size);
+}
+
+
+
 int write(int fd_code, const void *buffer, unsigned size)
 {
   // printf("get into write\n");
@@ -186,23 +205,27 @@ int write(int fd_code, const void *buffer, unsigned size)
     putbuf(buffer, size);
     return size;
   }
-  // printf("fd_code != 1!\n");
-  struct fd *f = get_fd_by_code(fd_code);
-  // printf("finish struct fd *f = get_fd_by_code(fd_code)\n");
-  if (f == NULL)
+  else
   {
-    // printf("f == NULL!\n");
-    return -1;
+      // printf("fd_code != 1!\n");
+    struct fd *f = get_fd_by_code(fd_code);
+    // printf("finish struct fd *f = get_fd_by_code(fd_code)\n");
+    if (f)
+    {
+      // //向文件进行写，得到返回码，即实际写入的字节数
+      lock_acquire(&file_lock);
+      // printf("finish lock_acquire(&file_lock)\n");
+      int ret = file_write(f->file, buffer, size);
+      // printf("finish int ret = file_write(f->file, buffer, size)\n");
+      lock_release(&file_lock);
+      // printf("finish lock_release(&file_lock);\n");
+      return ret;
+    }
+    else
+    {
+      return -1;
+    }
   }
-  // printf("f != NULL!\n");
-  // //向文件进行写，得到返回码，即实际写入的字节数
-  lock_acquire(&file_lock);
-  // printf("finish lock_acquire(&file_lock)\n");
-  int ret = file_write(f->file, buffer, size);
-  // printf("finish int ret = file_write(f->file, buffer, size)\n");
-  lock_release(&file_lock);
-  // printf("finish lock_release(&file_lock);\n");
-  return ret;
 }
 
 //通过文件标识符的值关闭文件
