@@ -126,7 +126,7 @@ void sys_exit(struct intr_frame *f)
 {
   uint32_t *p = f->esp + 4;
   check_pointer(p, 1);
-  int status = *bn p;
+  int status = *p;
   exit(status);
 }
 void exit(int status)
