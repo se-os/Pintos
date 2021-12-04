@@ -36,7 +36,7 @@ void sys_seek(struct intr_frame *);
 void sys_tell(struct intr_frame *);
 void sys_close(struct intr_frame *);
 
-int fd_num = 3;
+int fd_num = 2;
 //文件描述符
 struct fd
 {
@@ -63,19 +63,19 @@ void syscall_init(void)
     syscalls[i] = NULL;
   }
   //初始化系统调用列表
-  // syscalls[SYS_EXEC] = &sys_exec;
-  // syscalls[SYS_HALT] = &sys_halt;
+  syscalls[SYS_EXEC] = &sys_exec;
+  syscalls[SYS_HALT] = &sys_halt;
   syscalls[SYS_EXIT] = &sys_exit;
   //syscalls[SYS_WAIT] = &sys_wait;
   //syscalls[SYS_CREATE] = &sys_create;
   //syscalls[SYS_REMOVE] = &sys_remove;
   syscalls[SYS_OPEN] = &sys_open;
   syscalls[SYS_WRITE] = &sys_write;
-  //syscalls[SYS_SEEK] = &sys_seek;
-  //syscalls[SYS_TELL] = &sys_tell;
+  syscalls[SYS_SEEK] = &sys_seek;
+  syscalls[SYS_TELL] = &sys_tell;
   syscalls[SYS_CLOSE] = &sys_close;
   syscalls[SYS_READ] = &sys_read;
-  //syscalls[SYS_FILESIZE] = &sys_filesize;
+  syscalls[SYS_FILESIZE] = &sys_filesize;
 }
 
 static void
@@ -268,20 +268,20 @@ int open(const char *filename)
   struct thread *current = thread_current();
   if (f == NULL)
     return -1;
-  struct fd *fd = malloc(sizeof(struct fd));
+  struct fd *fd_tmp = malloc(sizeof(struct fd));
 
-  if (fd == NULL)
+  if (fd_tmp == NULL)
   {
     file_close(f);
     return -1;
   }
-  fd->file = f;
-  fd->fd_code = fd_num;
+  fd_tmp->file = f;
+  fd_tmp->fd_code = fd_num;
   fd_num++;
   // printf("\nthread:%s fd_code:%d\n", current->name, fd->fd_code);
-  list_push_back(&current->fd_list, &fd->fd_elem);
+  list_push_back(&current->fd_list, &fd_tmp->fd_elem);
   // printf("\nopen\n");
-  return fd->fd_code;
+  return fd_tmp->fd_code;
 }
 
 void sys_read(struct intr_frame *f)
@@ -338,4 +338,56 @@ void close(int fd_code)
   file_close(fd->file);
   list_remove(&fd->fd_elem);
   free(fd);
+}
+
+//filesize系统调用
+void sys_filesize(struct intr_frame *f){
+  //同write，获取文件描述符
+  uint32_t *p = f->esp + 4;
+  check_pointer(p,1);
+  int fd_code = *p++;
+  struct fd *fd=get_fd_by_code(fd_code);
+  if(fd!=NULL){
+    lock_acquire(&file_lock);
+    f->eax=file_length(fd);
+    lock_release(&file_lock);
+  }
+  else{
+    f->eax=-1;
+  }
+}
+
+//seek系统调用
+void sys_seek(struct intr_frame *f){
+  uint32_t *p = f->esp+4;
+  //检查文件名和距离是否在用户栈内
+  check_pointer(p, 2);
+  int fd_code=*p++;
+  unsigned int pos=*p++;
+  struct fd *fd=get_fd_by_code(fd_code);
+  if(fd!=NULL){
+    //调用API
+    lock_acquire(&file_lock);
+    file_seek(fd->file,pos);
+    lock_release(&file_lock);
+  }
+  else{
+    exit(-1);
+  }
+}
+
+//tell系统调用
+void sys_tell(struct intr_frame *f){
+  uint32_t *p = f->esp + 4;
+  check_pointer(p,1);
+  int fd_code = *p++;
+  struct fd *fd=get_fd_by_code(fd_code);
+  if(fd!=NULL){
+    lock_acquire(&file_lock);
+    f->eax=file_tell(fd->file);
+    lock_release(&file_lock);
+  }
+  else{
+    f->eax=-1;
+  }
 }
