@@ -156,13 +156,13 @@ void exit(int status)
   struct thread *cur = thread_current();
   // printf("try\n");
   //将线程的所有文件关闭
-  // while (!list_empty(&cur->fd_list))
-  // {
-  //   e = list_begin(&cur->fd_list);
-  //   close(list_entry(e, struct fd, fd_elem)->fd_code);
-  // }
-  // // printf("try\n");
-  // file_close(cur->dealing_file);
+  while (!list_empty(&cur->fd_list))
+  {
+    e = list_begin(&cur->fd_list);
+    close(list_entry(e, struct fd, fd_elem)->fd_code);
+  }
+  // printf("try\n");
+  file_close(cur->dealing_file);
   // printf("try\n");
   //设置线程退出码为指定退出码
   thread_current()->exit_code = status;
@@ -324,7 +324,7 @@ void sys_close(struct intr_frame *f)
 
   lock_acquire(&file_lock);
   close(fd_code);
-  lock_release(&lock_release);
+  lock_release(&file_lock);
 }
 
 //通过文件标识符的值关闭文件
