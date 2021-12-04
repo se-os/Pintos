@@ -36,6 +36,7 @@ void sys_seek(struct intr_frame *);
 void sys_tell(struct intr_frame *);
 void sys_close(struct intr_frame *);
 
+int fd_num = 2;
 //文件描述符
 struct fd
 {
@@ -49,25 +50,32 @@ void exit(int);
 //写
 int write(int, const void *, unsigned);
 void close(int);
+int open(const char *);
+
 void syscall_init(void)
 {
   intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
   lock_init(&file_lock);
   list_init(&file_list);
+  int i = 0;
+  for (i = 0; i < MAX_CALL; i++)
+  {
+    syscalls[i] = NULL;
+  }
   //初始化系统调用列表
   syscalls[SYS_EXEC] = &sys_exec;
   syscalls[SYS_HALT] = &sys_halt;
   syscalls[SYS_EXIT] = &sys_exit;
   //syscalls[SYS_WAIT] = &sys_wait;
-  // syscalls[SYS_CREATE] = &sys_create;
-  // syscalls[SYS_REMOVE] = &sys_remove;
-  // syscalls[SYS_OPEN] = &sys_open;
+  //syscalls[SYS_CREATE] = &sys_create;
+  //syscalls[SYS_REMOVE] = &sys_remove;
+  syscalls[SYS_OPEN] = &sys_open;
   syscalls[SYS_WRITE] = &sys_write;
-  // syscalls[SYS_SEEK] = &sys_seek;
-  // syscalls[SYS_TELL] = &sys_tell;
-  // syscalls[SYS_CLOSE] =&sys_close;
-  // syscalls[SYS_READ] = &sys_read;
-  // syscalls[SYS_FILESIZE] = &sys_filesize;
+  //syscalls[SYS_SEEK] = &sys_seek;
+  //syscalls[SYS_TELL] = &sys_tell;
+  syscalls[SYS_CLOSE] = &sys_close;
+  syscalls[SYS_READ] = &sys_read;
+  //syscalls[SYS_FILESIZE] = &sys_filesize;
 }
 
 static void
@@ -80,15 +88,26 @@ syscall_handler(struct intr_frame *f UNUSED)
   if (p == NULL || type <= 0 || type >= MAX_CALL)
     exit(-1);
   syscalls[type](f); //根据调用号调用系统调用函数
-  
+
   //printf ("system call!\n");
   //thread_exit ();
 }
+
 void check_pointer(void *esp, int num)
 {
   for (int i = 0; i < num * 4; i++)
-    if (!is_user_vaddr(esp + i) || !pagedir_get_page(thread_current()->pagedir, esp + i))
+    if (!is_user_vaddr(esp + i) || pagedir_get_page(thread_current()->pagedir, esp + i) == NULL)
       exit(-1);
+  return;
+}
+
+void check_char_pointer(char *pointer)
+{
+  if (pointer == NULL)
+  {
+    exit(-1);
+  }
+  check_pointer(pointer, 1);
   return;
 }
 
@@ -117,6 +136,7 @@ get_fd_by_code(int fd_code)
   }
   return NULL;
 }
+
 void sys_halt(void)
 {
   shutdown_power_off();
@@ -152,12 +172,13 @@ void exit(int status)
 
 void sys_exec(struct intr_frame *f)
 {
-   uint32_t *p = f->esp + 4;
-   check_pointer(p,1);
-   char* ptr = *(char**)p;
-   if(ptr == NULL)exit(-1);
-   check_pointer(ptr,1);
-   f->eax = process_execute(ptr);
+  uint32_t *p = f->esp + 4;
+  check_pointer(p, 1);
+  char *ptr = *(char **)p;
+  if (ptr == NULL)
+    exit(-1);
+  check_pointer(ptr, 1);
+  f->eax = process_execute(ptr);
 }
 
 void sys_write(struct intr_frame *f)
@@ -194,8 +215,6 @@ void sys_write(struct intr_frame *f)
   f->eax = write(fd, buffer, size);
 }
 
-
-
 int write(int fd_code, const void *buffer, unsigned size)
 {
   // printf("get into write\n");
@@ -207,7 +226,7 @@ int write(int fd_code, const void *buffer, unsigned size)
   }
   else
   {
-      // printf("fd_code != 1!\n");
+    // printf("fd_code != 1!\n");
     struct fd *f = get_fd_by_code(fd_code);
     // printf("finish struct fd *f = get_fd_by_code(fd_code)\n");
     if (f)
@@ -228,15 +247,95 @@ int write(int fd_code, const void *buffer, unsigned size)
   }
 }
 
+void sys_open(struct intr_frame *f)
+{
+  // printf("\nstart sys_open\n");
+  uint32_t *p = f->esp + 4;
+  check_pointer(p, 1);
+  char *filename = *(char **)(f->esp + 4);
+  check_char_pointer(filename);
+
+  // printf("\ncheck complete!\n");
+  lock_acquire(&file_lock);
+  f->eax = open(filename);
+  lock_release(&file_lock);
+}
+
+int open(const char *filename)
+{
+  // printf("\nopen start!\n");
+  struct file *f = filesys_open(filename);
+  struct thread *current = thread_current();
+  if (f == NULL)
+    return -1;
+  struct fd *fd_tmp = malloc(sizeof(struct fd));
+
+  if (fd_tmp == NULL)
+  {
+    file_close(f);
+    return -1;
+  }
+  fd_tmp->file = f;
+  fd_tmp->fd_code = fd_num;
+  fd_num++;
+  // printf("\nthread:%s fd_code:%d\n", current->name, fd->fd_code);
+  list_push_back(&current->fd_list, &fd_tmp->fd_elem);
+  // printf("\nopen\n");
+  return fd_tmp->fd_code;
+}
+
+void sys_read(struct intr_frame *f)
+{
+  check_pointer(f->esp + 4, 3);
+  int fd_code = *(int *)(f->esp + 4);
+  void *buf = *(char **)(f->esp + 8);
+  unsigned file_size = *(unsigned *)(f->esp + 12);
+  check_char_pointer(buf);
+
+  lock_acquire(&file_lock);
+  f->eax = read(fd_code, buf, file_size);
+  lock_release(&file_lock);
+}
+
+int read(int fd_code, void *buffer, unsigned file_size)
+{
+  if (fd_code == 0)
+  {
+    int i;
+    for (i = 0; i < file_size; i++)
+    {
+      (*((char **)buffer))[i] = input_getc();
+    }
+    return file_size;
+  }
+  struct fd *fd = get_fd_by_code(fd_code);
+  if (fd == NULL)
+  {
+    return -1;
+  }
+  return file_read(fd->file, buffer, file_size);
+}
+
+void sys_close(struct intr_frame *f)
+{
+  uint32_t *p = f->esp + 4;
+  check_pointer(p, 1);
+  int fd_code = *(int *)(p);
+
+  lock_acquire(&file_lock);
+  close(fd_code);
+  lock_release(&lock_release);
+}
+
 //通过文件标识符的值关闭文件
 void close(int fd_code)
 {
   //根据fd值获取文件标识符
-  struct fd *f = get_fd_by_code(fd_code);
-  if (f == NULL)
+  struct fd *fd = get_fd_by_code(fd_code);
+  if (fd == NULL)
     return -1;
   //关闭文件
-  file_close(f->file);
-  list_remove(&f->fd_elem);
-  free(f);
+  file_close(fd->file);
+  list_remove(&fd->fd_elem);
+  free(fd);
 }

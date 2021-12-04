@@ -108,8 +108,8 @@ start_process(void *file_name_)
   {
     //这一步是为了获取下一个参数名，详见strtok_r函数中对第一个参数s=NULL的处理，实际上就是将指针指向下一个被分割出来的参数
     //+1是为了给'\0'留地方
-    if_.esp -= (strlen(token)+1);
-    memcpy (if_.esp, token, strlen(token)+1);
+    if_.esp -= (strlen(token) + 1);
+    memcpy(if_.esp, token, strlen(token) + 1);
     //存储参数地址
     argv[argc++] = (int)if_.esp;
   }
@@ -118,24 +118,24 @@ start_process(void *file_name_)
   {
     if_.esp--;
   }
-  if_.esp-=4;
-  *(int*)if_.esp = 0;
+  if_.esp -= 4;
+  *(int *)if_.esp = 0;
   int i;
   //反向压入
   for (i = argc - 1; i >= 0; i--)
   {
-    if_.esp-=4;
-    *(int*)if_.esp = argv[i];
+    if_.esp -= 4;
+    *(int *)if_.esp = argv[i];
   }
   //argv
-  if_.esp-=4;
-  *(int*)if_.esp=(int)if_.esp+4;
+  if_.esp -= 4;
+  *(int *)if_.esp = (int)if_.esp + 4;
   //argc
-  if_.esp-=4;
-  *(int*)if_.esp = argc;
+  if_.esp -= 4;
+  *(int *)if_.esp = argc;
   //return address
-  if_.esp-=4;
-  *(int*)if_.esp = 0;
+  if_.esp -= 4;
+  *(int *)if_.esp = 0;
   // printf("start free\n");
   free(file_name);
   // printf("free success\n");
