@@ -55,19 +55,19 @@ void syscall_init(void)
   lock_init(&file_lock);
   list_init(&file_list);
   //初始化系统调用列表
-  //syscalls[SYS_EXEC] = &sys_exec;
-  //syscalls[SYS_HALT] = &sys_halt;
+  syscalls[SYS_EXEC] = &sys_exec;
+  syscalls[SYS_HALT] = &sys_halt;
   syscalls[SYS_EXIT] = &sys_exit;
   //syscalls[SYS_WAIT] = &sys_wait;
-  //syscalls[SYS_CREATE] = &sys_create;
-  //syscalls[SYS_REMOVE] = &sys_remove;
-  //syscalls[SYS_OPEN] = &sys_open;
+  // syscalls[SYS_CREATE] = &sys_create;
+  // syscalls[SYS_REMOVE] = &sys_remove;
+  // syscalls[SYS_OPEN] = &sys_open;
   syscalls[SYS_WRITE] = &sys_write;
-  //syscalls[SYS_SEEK] = &sys_seek;
-  //syscalls[SYS_TELL] = &sys_tell;
-  //syscalls[SYS_CLOSE] =&sys_close;
-  //syscalls[SYS_READ] = &sys_read;
-  //syscalls[SYS_FILESIZE] = &sys_filesize;
+  // syscalls[SYS_SEEK] = &sys_seek;
+  // syscalls[SYS_TELL] = &sys_tell;
+  // syscalls[SYS_CLOSE] =&sys_close;
+  // syscalls[SYS_READ] = &sys_read;
+  // syscalls[SYS_FILESIZE] = &sys_filesize;
 }
 
 static void
@@ -136,13 +136,13 @@ void exit(int status)
   struct thread *cur = thread_current();
   // printf("try\n");
   //将线程的所有文件关闭
-   while (!list_empty(&cur->fd_list))
-   {
-     e = list_begin(&cur->fd_list);
-     close(list_entry(e, struct fd, fd_elem)->fd_code);
-   }
-   // printf("try\n");
-   file_close(cur->dealing_file);
+  // while (!list_empty(&cur->fd_list))
+  // {
+  //   e = list_begin(&cur->fd_list);
+  //   close(list_entry(e, struct fd, fd_elem)->fd_code);
+  // }
+  // // printf("try\n");
+  // file_close(cur->dealing_file);
   // printf("try\n");
   //设置线程退出码为指定退出码
   thread_current()->exit_code = status;

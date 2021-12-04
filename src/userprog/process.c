@@ -37,16 +37,12 @@ tid_t process_execute(const char *file_name)
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-
-  /* Create a new thread to execute FILE_NAME. */
   fn_copy = malloc(strlen(file_name) + 1);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy(fn_copy, file_name, strlen(file_name) + 1);
   // printf("address %p\n", &file_name);
   // printf("%s get fn_copy\n", fn_copy);
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a page fault*/
   char *token = malloc(strlen(file_name) + 1);
   if (token == NULL)
   {
@@ -56,15 +52,13 @@ tid_t process_execute(const char *file_name)
   strlcpy(token, file_name, strlen(file_name) + 1);
   // printf("address %p\n", &file_name);
   // printf("%s get another copy token\n", token);
-  /* Create a new thread to execute FILE_NAME. */
   char *save_ptr = NULL;
   token = strtok_r(token, " ", &save_ptr);
   // printf("get token %s\n", token);
   // printf("address fn_copy:%p\taddress token:%p\n", &fn_copy, &token);
+  /* Create a new thread to execute FILE_NAME. */
   tid = thread_create(token, PRI_DEFAULT, start_process, fn_copy);
-  // printf("start free\n");
   free(token);
-  // printf("free success\n");
 
   if (tid == TID_ERROR)
   {
@@ -81,7 +75,6 @@ start_process(void *file_name_)
 {
   char *file_name = file_name_;
   // printf("address %p\n", &file_name_);
-  // printf("tid:%d , name:%s , start process\n", thread_current()->tid, file_name, file_name);
   struct intr_frame if_;
   bool success;
 
@@ -91,14 +84,11 @@ start_process(void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a page fault*/
+  //进行一次拷贝，
   char *token = malloc(strlen(file_name) + 1);
   strlcpy(token, file_name, strlen(file_name) + 1);
   char *save_ptr = NULL;
   token = strtok_r(token, " ", &save_ptr);
-
-  /* 加载用户进程的eip和esp eip:执行指令地址 esp:栈顶地址 */
   success = load(token, &if_.eip, &if_.esp);
   // printf("set success false\n");
   // success = false;
@@ -109,37 +99,43 @@ start_process(void *file_name_)
     exit(-1);
   }
 
-  /* 参数传递 */
-  char *esp = (char *)if_.esp; // 维护栈顶
-  int argv[128];               // 存储的参数地址
-  int argc = 0, tokenlen = 0;  // argc:参数数量 tokenlen:token长度
+  //参数传递
+  //依据文档，最多128bytes
+  int argv[128];
+  //参数个数
+  int argc = 0;
   for (; token != NULL; token = strtok_r(NULL, " ", &save_ptr))
   {
-    tokenlen = strlen(token) + 1;      //'(token)\0'
-    esp -= tokenlen;                   // decrements the stack pointer
-    strlcpy(esp, token, tokenlen + 1); // right-to-left order
-    argv[argc++] = (int)esp;
+    //这一步是为了获取下一个参数名，详见strtok_r函数中对第一个参数s=NULL的处理，实际上就是将指针指向下一个被分割出来的参数
+    //+1是为了给'\0'留地方
+    if_.esp -= (strlen(token)+1);
+    memcpy (if_.esp, token, strlen(token)+1);
+    //存储参数地址
+    argv[argc++] = (int)if_.esp;
   }
-  while ((int)esp % 4 != 0)
-  { // word-align
-    esp--;
+  //word-align四位对齐
+  while ((int)if_.esp % 4 != 0)
+  {
+    if_.esp--;
   }
-  int *tmp = (int *)esp; // 接下来存argv地址
-  tmp--;
-  *tmp = 0; // argv[argc+1]
-  tmp--;
+  if_.esp-=4;
+  *(int*)if_.esp = 0;
   int i;
+  //反向压入
   for (i = argc - 1; i >= 0; i--)
   {
-    *tmp = argv[i];
-    tmp--;
+    if_.esp-=4;
+    *(int*)if_.esp = argv[i];
   }
-  *tmp = (int)(tmp + 1); // argv
-  tmp--;
-  *tmp = argc; // argc;
-  tmp--;
-  *tmp = 0;      // return address
-  if_.esp = tmp; // 栈更新
+  //argv
+  if_.esp-=4;
+  *(int*)if_.esp=(int)if_.esp+4;
+  //argc
+  if_.esp-=4;
+  *(int*)if_.esp = argc;
+  //return address
+  if_.esp-=4;
+  *(int*)if_.esp = 0;
   // printf("start free\n");
   free(file_name);
   // printf("free success\n");
