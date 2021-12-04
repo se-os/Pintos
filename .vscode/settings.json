@@ -4,6 +4,13 @@
     "files.associations": {
         "*.inc": "c",
         "*.tcc": "c",
-        "fstream": "c"
+        "fstream": "c",
+        "syscall.h": "c",
+        "syscall-nr.h": "c",
+        "lib.h": "c",
+        "main.h": "c",
+        "file.h": "c",
+        "synch.h": "c",
+        "list.h": "c"
     },
 }
