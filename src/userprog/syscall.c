@@ -339,3 +339,55 @@ void close(int fd_code)
   list_remove(&fd->fd_elem);
   free(fd);
 }
+
+//filesize系统调用
+void sys_filesize(structc intr_frame *f){
+  //同write，获取文件描述符
+  uint32_t *p = f->esp + 4;
+  check_pointer(p,1);
+  int fd_code = *p++;
+  struct fd *fd=get_fd_by_code(fd_code);
+  if(fd!=NULL){
+    lock_acquire(&file_lock);
+    fd->eax=filesize(fd);
+    lock_release(&file_lock);
+  }
+  else{
+    fd->eax=-1;
+  }
+}
+
+//seek系统调用
+void sys_seek(structc intr_frame *f){
+  uint32_t *p = f->esp+4;
+  //检查文件名和距离是否在用户栈内
+  check_pointer(p, 2);
+  int fd_code=*p++;
+  unsigned int pos=*p++;
+  struct fd *fd=get_fd_by_code(fd_code);
+  if(fd!=NULL){
+    //调用API
+    lock_acquire(&file_lock);
+    file_seek(fd->file,pos);
+    lock_release(&file_lock);
+  }
+  else{
+    exit(-1);
+  }
+}
+
+//tell系统调用
+void sys_tell(structc intr_frame *f){
+  uint32_t *p = f->esp + 4;
+  check_pointer(p,1);
+  int fd_code = *p++;
+  struct fd *fd=get_fd_by_code(fd_code);
+  if(fd!=NULL){
+    lock_acquire(&file_lock);
+    fd->eax=file_tell(fd->file);
+    lock_release(&file_lock);
+  }
+  else{
+    fd->eax=-1;
+  }
+}
