@@ -71,11 +71,11 @@ void syscall_init(void)
   //syscalls[SYS_REMOVE] = &sys_remove;
   syscalls[SYS_OPEN] = &sys_open;
   syscalls[SYS_WRITE] = &sys_write;
-  //syscalls[SYS_SEEK] = &sys_seek;
-  //syscalls[SYS_TELL] = &sys_tell;
+  syscalls[SYS_SEEK] = &sys_seek;
+  syscalls[SYS_TELL] = &sys_tell;
   syscalls[SYS_CLOSE] = &sys_close;
   syscalls[SYS_READ] = &sys_read;
-  //syscalls[SYS_FILESIZE] = &sys_filesize;
+  syscalls[SYS_FILESIZE] = &sys_filesize;
 }
 
 static void
@@ -341,7 +341,7 @@ void close(int fd_code)
 }
 
 //filesize系统调用
-void sys_filesize(structc intr_frame *f){
+void sys_filesize(struct intr_frame *f){
   //同write，获取文件描述符
   uint32_t *p = f->esp + 4;
   check_pointer(p,1);
@@ -349,16 +349,16 @@ void sys_filesize(structc intr_frame *f){
   struct fd *fd=get_fd_by_code(fd_code);
   if(fd!=NULL){
     lock_acquire(&file_lock);
-    fd->eax=filesize(fd);
+    f->eax=file_length(fd);
     lock_release(&file_lock);
   }
   else{
-    fd->eax=-1;
+    f->eax=-1;
   }
 }
 
 //seek系统调用
-void sys_seek(structc intr_frame *f){
+void sys_seek(struct intr_frame *f){
   uint32_t *p = f->esp+4;
   //检查文件名和距离是否在用户栈内
   check_pointer(p, 2);
@@ -377,17 +377,17 @@ void sys_seek(structc intr_frame *f){
 }
 
 //tell系统调用
-void sys_tell(structc intr_frame *f){
+void sys_tell(struct intr_frame *f){
   uint32_t *p = f->esp + 4;
   check_pointer(p,1);
   int fd_code = *p++;
   struct fd *fd=get_fd_by_code(fd_code);
   if(fd!=NULL){
     lock_acquire(&file_lock);
-    fd->eax=file_tell(fd->file);
+    f->eax=file_tell(fd->file);
     lock_release(&file_lock);
   }
   else{
-    fd->eax=-1;
+    f->eax=-1;
   }
 }
