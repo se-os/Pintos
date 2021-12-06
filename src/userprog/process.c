@@ -24,6 +24,21 @@
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 
+struct child_process_status *
+get_child_status(int tid)
+{
+  struct list_elem *e;
+  struct thread *cur = thread_current();
+  struct child_process_status *child_status = NULL;
+  for (e = list_begin(&cur->child_status); e != list_end(&cur->child_status); e = list_next(e))
+  {
+    child_status = list_entry(e, struct child_process_status, elem);
+    if (child_status->tid == tid)
+      return child_status;
+  }
+  return NULL;
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -65,6 +80,20 @@ tid_t process_execute(const char *file_name)
     free(fn_copy);
     return tid;
   }
+  /* 创建成功 */
+  //printf("%d create %d success\n",thread_current()->tid,tid);
+  struct child_process_status *child_status = get_child_status(tid);
+  while (child_status->loaded == 0)
+  {
+    //printf("tid:%d wait tid:%d to load\n",thread_current()->tid,child_status->child->tid);
+    sema_down(&thread_current()->sema); /* 阻塞，等待子进程执行完loaded */
+  }
+  if (child_status->loaded == -1) /* 子进程已经加载完毕 */
+  {
+    //printf("%d wake up,child %d loaded failed, ret_status:%d\n",thread_current()->tid,tid,child_status->ret_status);
+    return -1;
+  }
+  //printf("%d wake up,%d is still running, return tid:%d\n",thread_current()->tid,tid,tid);
   return tid;
 }
 
@@ -96,6 +125,9 @@ start_process(void *file_name_)
   /* If load failed, quit. */
   if (!success)
   {
+    thread_current()->relay_status->loaded = -1;
+    //printf("%d load failed , sema up parent tid:%d\n",thread_current()->tid,thread_current()->parent->tid);
+    sema_up(&thread_current()->parent->sema);
     exit(-1);
   }
 
@@ -139,6 +171,9 @@ start_process(void *file_name_)
   // printf("start free\n");
   free(file_name);
   // printf("free success\n");
+  thread_current()->relay_status->loaded = 1;
+  //printf("%d load success, sema up parent tid:%d\n",thread_current()->tid,thread_current()->parent->tid);
+  sema_up(&thread_current()->parent->sema);
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -163,9 +198,34 @@ start_process(void *file_name_)
    does nothing. */
 int process_wait(tid_t child_tid UNUSED)
 {
-  //用于评测
-  timer_sleep(1000);
-  return -1;
+  //printf("%d process wait %d\n",thread_current()->tid,child_tid);
+  if (child_tid == TID_ERROR)
+  {
+    //printf("%d TID invalid\n",child_tid);
+    return -1; /* TID invalid */
+  }
+  struct child_process_status *child_status = get_child_status(child_tid);
+  if (child_status == NULL)
+  {
+    //printf("%d No child_status\n",child_tid);
+    return -1; /* not child_tid */
+  }
+  if (child_status->iswaited)
+  {
+    //printf("%d Is being waited\n",child_tid);
+    return -1;
+  }
+  child_status->iswaited = true;
+  while (!child_status->finish)
+  {
+    //printf("%d sema down , waits for %d\n",thread_current()->tid,child_tid);
+    sema_down(&thread_current()->sema);
+  }
+  //printf("%d wait over , now free child_status->tid:%d , return %d\n",thread_current()->tid,child_tid,child_status->ret_status);
+  int res = child_status->ret_status;
+  list_remove(&child_status->elem);
+  free(child_status);
+  return res;
 }
 
 /* Free the current process's resources. */

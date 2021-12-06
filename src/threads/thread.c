@@ -179,6 +179,16 @@ tid_t thread_create(const char *name, int priority,
   init_thread(t, name, priority);
   tid = t->tid = allocate_tid();
 
+  /* 初始化child_process_status */
+  t->relay_status = malloc(sizeof(struct child_process_status));
+  t->relay_status->child = t;
+  t->relay_status->tid = tid;
+  t->relay_status->finish = false;
+  t->relay_status->iswaited = false;
+  t->relay_status->loaded = 0;
+  t->parent = thread_current();
+  list_push_back(&t->parent->child_status, &t->relay_status->elem);
+
   /* Prepare thread for first run by initializing its stack.
      Do this atomically so intermediate values for the 'stack' 
      member cannot be observed. */
@@ -291,6 +301,20 @@ thread_exit(void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable();
+  struct thread *cur = thread_current();
+  if (cur->parent != NULL)
+  {
+    cur->relay_status->ret_status = cur->exit_code;
+    cur->relay_status->finish = true;
+    sema_up(&cur->parent->sema);
+  }
+
+  while (!list_empty(&cur->child_status))
+  {
+    struct child_process_status *child_status = list_entry(list_pop_front(&cur->child_status), struct child_process_status, elem);
+    child_status->child->parent = NULL;
+    free(child_status);
+  }
   list_remove(&thread_current()->allelem);
   thread_current()->status = THREAD_DYING;
   schedule();
@@ -460,8 +484,11 @@ init_thread(struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  sema_init(&t->sema, 0);      /* 初始化信号量 */
+  list_init(&t->child_status); /* 初始化子进程状态列表 */
   list_init(&t->fd_list);
   list_push_back(&all_list, &t->allelem);
+  intr_set_level(old_level);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

@@ -66,9 +66,9 @@ void syscall_init(void)
   syscalls[SYS_EXEC] = &sys_exec;
   syscalls[SYS_HALT] = &sys_halt;
   syscalls[SYS_EXIT] = &sys_exit;
-  //syscalls[SYS_WAIT] = &sys_wait;
-  //syscalls[SYS_CREATE] = &sys_create;
-  //syscalls[SYS_REMOVE] = &sys_remove;
+  syscalls[SYS_WAIT] = &sys_wait;
+  syscalls[SYS_CREATE] = &sys_create;
+  syscalls[SYS_REMOVE] = &sys_remove;
   syscalls[SYS_OPEN] = &sys_open;
   syscalls[SYS_WRITE] = &sys_write;
   syscalls[SYS_SEEK] = &sys_seek;
@@ -212,7 +212,9 @@ void sys_write(struct intr_frame *f)
   // exit(-1);
   // printf("jump check_pointer(buffer, 1)\n");
   // printf("finish check_pointer(buffer, 1)\n");
+  lock_acquire(&file_lock);
   f->eax = write(fd, buffer, size);
+  lock_release(&file_lock);
 }
 
 int write(int fd_code, const void *buffer, unsigned size)
@@ -232,11 +234,11 @@ int write(int fd_code, const void *buffer, unsigned size)
     if (f)
     {
       // //向文件进行写，得到返回码，即实际写入的字节数
-      lock_acquire(&file_lock);
+      
       // printf("finish lock_acquire(&file_lock)\n");
       int ret = file_write(f->file, buffer, size);
       // printf("finish int ret = file_write(f->file, buffer, size)\n");
-      lock_release(&file_lock);
+      
       // printf("finish lock_release(&file_lock);\n");
       return ret;
     }
@@ -341,53 +343,113 @@ void close(int fd_code)
 }
 
 //filesize系统调用
-void sys_filesize(struct intr_frame *f){
+void sys_filesize(struct intr_frame *f)
+{
   //同write，获取文件描述符
   uint32_t *p = f->esp + 4;
-  check_pointer(p,1);
+  check_pointer(p, 1);
   int fd_code = *p++;
-  struct fd *fd=get_fd_by_code(fd_code);
-  if(fd!=NULL){
+  struct fd *fd = get_fd_by_code(fd_code);
+  if (fd != NULL)
+  {
     lock_acquire(&file_lock);
-    f->eax=file_length(fd);
+    f->eax = file_length(fd);
     lock_release(&file_lock);
   }
-  else{
-    f->eax=-1;
+  else
+  {
+    f->eax = -1;
   }
 }
 
 //seek系统调用
-void sys_seek(struct intr_frame *f){
-  uint32_t *p = f->esp+4;
+void sys_seek(struct intr_frame *f)
+{
+  uint32_t *p = f->esp + 4;
   //检查文件名和距离是否在用户栈内
   check_pointer(p, 2);
-  int fd_code=*p++;
-  unsigned int pos=*p++;
-  struct fd *fd=get_fd_by_code(fd_code);
-  if(fd!=NULL){
+  int fd_code = *p++;
+  unsigned int pos = *p++;
+  struct fd *fd = get_fd_by_code(fd_code);
+  if (fd != NULL)
+  {
     //调用API
     lock_acquire(&file_lock);
-    file_seek(fd->file,pos);
+    file_seek(fd->file, pos);
     lock_release(&file_lock);
   }
-  else{
+  else
+  {
     exit(-1);
   }
 }
 
 //tell系统调用
-void sys_tell(struct intr_frame *f){
+void sys_tell(struct intr_frame *f)
+{
   uint32_t *p = f->esp + 4;
-  check_pointer(p,1);
+  check_pointer(p, 1);
   int fd_code = *p++;
-  struct fd *fd=get_fd_by_code(fd_code);
-  if(fd!=NULL){
+  struct fd *fd = get_fd_by_code(fd_code);
+  if (fd != NULL)
+  {
     lock_acquire(&file_lock);
-    f->eax=file_tell(fd->file);
+    f->eax = file_tell(fd->file);
     lock_release(&file_lock);
   }
-  else{
-    f->eax=-1;
+  else
+  {
+    f->eax = -1;
   }
+}
+
+//创建文件系统调用
+void sys_create(struct intr_frame *f)
+{
+  //printf("%s syscall_create\n",thread_current()->name);
+  //检查文件名和初始化大小两个参数是否合法。
+  uint32_t *p = f->esp + 4;
+  check_pointer(p, 2);
+  char *file = *(char **)(f->esp + 4);
+  //文件名不能为空
+  if (file == NULL)
+  {
+    exit(-1);
+  }
+  check_pointer(file, 1);
+  unsigned initial_size = *(int *)(f->esp + 8);
+  //printf("%s lock acquire\n",thread_current()->name);
+  //调用 filesys/filesys.c 中定义的 filesys_create
+  lock_acquire(&file_lock);
+  f->eax = filesys_create(file, initial_size);
+  lock_release(&file_lock);
+  //printf("%s lock release\n",thread_current()->name);
+}
+
+//删除文件系统调用
+void sys_remove(struct intr_frame *f)
+{
+  uint32_t *p = f->esp + 4;
+  //检查文件名参数是否合法。
+  check_pointer(p, 1);
+  char *file = *(char **)(f->esp + 4);
+  if (file == NULL)
+  {
+    exit(1);
+  }
+  check_pointer(file, 1);
+  //printf("%s lock acquire\n",thread_current()->name);
+  lock_acquire(&file_lock);
+  f->eax = filesys_remove(file);
+  lock_release(&file_lock);
+  //printf("%s lock release\n",thread_current()->name);
+}
+
+void sys_wait(struct intr_frame *f)
+{
+  uint32_t *p = f->esp + 4;
+  //检查文件名参数是否合法。
+  check_pointer(p, 1);
+  pid_t pid = *(int *)(f->esp + 4);
+  f->eax = process_wait(pid);
 }
