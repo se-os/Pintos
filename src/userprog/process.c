@@ -357,6 +357,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
   process_activate();
 
   /* Open executable file. */
+  lock_acquire(&file_lock);
   file = filesys_open(file_name);
   if (file == NULL)
   {
@@ -440,7 +441,15 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
 
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close(file);
+  if (success)
+  {
+    t->dealing_file = file;
+    file_deny_write(file);
+  }else{
+    file_close(file);
+  }
+  lock_release(&file_lock);
+
   return success;
 }
 
