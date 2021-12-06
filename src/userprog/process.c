@@ -232,7 +232,7 @@ int process_wait(tid_t child_tid UNUSED)
 void process_exit(void)
 {
   struct thread *cur = thread_current();
-  printf("%s: exit(%d)\n", cur->name, cur->exit_code); /*输出退出码*/
+  //printf("%s: exit(%d)\n", cur->name, cur->ret); /*输出退出码*/
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -449,7 +449,7 @@ done:
     file_close(file);
   }
   lock_release(&file_lock);
-
+  
   return success;
 }
 

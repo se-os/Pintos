@@ -4,7 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-
+#include "synch.h"
 /* States in a thread's life cycle. */
 enum thread_status
 {
@@ -103,7 +103,7 @@ struct thread
    struct list_elem cp;       //子进程
    struct thread *parent;     /* 父进程 */
    tid_t P_tid;               //父进程tid
-   struct semaphore *sema;    /* 子进程将会在该信号量上等待 */
+   struct semaphore sema;    /* 子进程将会在该信号量上等待 */
    struct list fd_list;       //持有的fd列表
    struct file *dealing_file; //当前线程正在处理的文件
    struct child_process_status *relay_status;

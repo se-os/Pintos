@@ -350,16 +350,16 @@ void sys_filesize(struct intr_frame *f)
   check_pointer(p, 1);
   int fd_code = *p++;
   struct fd *fd = get_fd_by_code(fd_code);
+  lock_acquire(&file_lock);
   if (fd != NULL)
   {
-    lock_acquire(&file_lock);
     f->eax = file_length(fd->file);
-    lock_release(&file_lock);
   }
   else
   {
     f->eax = -1;
   }
+  lock_release(&file_lock);
 }
 
 //seek系统调用
@@ -369,13 +369,13 @@ void sys_seek(struct intr_frame *f)
   //检查文件名和距离是否在用户栈内
   check_pointer(p, 2);
   int fd_code = *p++;
-  unsigned int pos = *p++;
+  //unsigned int pos = *p++;
   struct fd *fd = get_fd_by_code(fd_code);
   if (fd != NULL)
   {
     //调用API
     lock_acquire(&file_lock);
-    file_seek(fd->file, pos);
+    file_seek(fd->file, *p);
     lock_release(&file_lock);
   }
   else

@@ -4,7 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-
+#include "userprog/syscall.h"
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
@@ -89,8 +89,8 @@ kill (struct intr_frame *f)
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
-      thread_current()->exit_code = -1;
-      thread_exit (); 
+      exit(-1);
+      //thread_exit (); 
 
     case SEL_KCSEG:
       /* Kernel's code segment, which indicates a kernel bug.
@@ -105,8 +105,8 @@ kill (struct intr_frame *f)
          kernel. */
       printf ("Interrupt %#04x (%s) in unknown segment %04x\n",
              f->vec_no, intr_name (f->vec_no), f->cs);
-      thread_current()->exit_code = -1;
-      thread_exit ();
+      exit(-1);
+      //thread_exit ();
     }
 }
 
@@ -129,6 +129,8 @@ page_fault (struct intr_frame *f)
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
 
+//   f->eip = f->esp;
+//   f->esp = 0xffffffff; 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
      data.  It is not necessarily the address of the instruction
