@@ -234,11 +234,11 @@ int write(int fd_code, const void *buffer, unsigned size)
     if (f)
     {
       // //向文件进行写，得到返回码，即实际写入的字节数
-      
+
       // printf("finish lock_acquire(&file_lock)\n");
       int ret = file_write(f->file, buffer, size);
       // printf("finish int ret = file_write(f->file, buffer, size)\n");
-      
+
       // printf("finish lock_release(&file_lock);\n");
       return ret;
     }
@@ -353,7 +353,7 @@ void sys_filesize(struct intr_frame *f)
   if (fd != NULL)
   {
     lock_acquire(&file_lock);
-    f->eax = file_length(fd);
+    f->eax = file_length(fd->file);
     lock_release(&file_lock);
   }
   else
