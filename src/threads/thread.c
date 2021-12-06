@@ -312,7 +312,7 @@ void thread_exit(void)
   {
     cur->as_child_status->ret_status = cur->exit_code; //正常结束时，返回状态即为子进程退出码
     cur->as_child_status->is_finished = true;          //子进程已经结束
-    sema_up(&cur->parent->sema);                       //唤醒等待在父进程信号量上的其他子进程
+    sema_up(&cur->parent->sema);                       //唤醒等待在信号量上的进程
   }
   /* Remove thread from all threads list, set our status to dying,
     and schedule another process.  That process will destroy us

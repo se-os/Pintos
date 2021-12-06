@@ -99,10 +99,7 @@ struct thread
    /* Owned by thread.c. */
    unsigned magic;                       /* Detects stack overflow. */
    int exit_code;                        /*退出码*/
-   struct list child_list;               /*子进程队列*/
-   struct list_elem cp;                  //子进程
    struct thread *parent;                /* 父进程 */
-   tid_t P_tid;                          //父进程tid
    struct semaphore sema;                /* 子进程将会在该信号量上等待 */
    struct list fd_list;                  //持有的fd列表
    struct file *dealing_file;            //当前线程正在处理的文件
@@ -110,7 +107,7 @@ struct thread
    struct list child_status_list;        /* 子进程状态列表，使得子进程结束后父进程也能获得子进程的状态 */
 };
 
-struct child_status /* 该进程作为子进程的状态 */
+struct child_status /* 该进程作为子进程时的状态 */
 {
    int ret_status;
    /* 子进程返回状态。如果为-1表示异常退出,此时子进程可能已经结束,父进程直接认为该子进程返回状态为-1 
@@ -119,7 +116,7 @@ struct child_status /* 该进程作为子进程的状态 */
    struct thread *child; /* 指向子进程，即拥有该结构体的进程 */
    bool is_finished;     /* 子进程是否运行结束 */
    bool is_waited;
-   /* 该函数用来实现wait系统调用。根据文档要求，进行process_wait(pid)等待子进程pid时，如果该子进程
+   /* 该函数用来实现wait系统调用,判断子进程是否正在被别的进程等待（或者已经被父进程等待过一次）根据文档要求，进行process_wait(pid)等待子进程pid时，如果该子进程
    在之前已经被父进程成功wait到了，就要立即返回-1，不进行等待。if process_wait() has already */
    int is_loaded;         /* 是否加载成功. 0-未加载，1-加载成功，-1-加载失败*/
    struct list_elem elem; /* elem for child_status */
