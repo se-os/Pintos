@@ -24,17 +24,17 @@
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 
-struct child_process_status *
-get_child_status(int tid)
+//根据tid返回当前进程中对应tid的子进程状态
+struct child_status *
+get_child_status_by_tid(int tid)
 {
   struct list_elem *e;
-  struct thread *cur = thread_current();
-  struct child_process_status *child_status = NULL;
-  for (e = list_begin(&cur->child_status); e != list_end(&cur->child_status); e = list_next(e))
+  struct child_status *tmp_child_status = NULL;
+  for (e = list_begin(&thread_current()->child_status_list); e != list_end(&thread_current()->child_status_list); e = list_next(e))
   {
-    child_status = list_entry(e, struct child_process_status, elem);
-    if (child_status->tid == tid)
-      return child_status;
+    tmp_child_status = list_entry(e, struct child_status, elem);
+    if (tmp_child_status->tid == tid)
+      return tmp_child_status;
   }
   return NULL;
 }
@@ -82,13 +82,13 @@ tid_t process_execute(const char *file_name)
   }
   /* 创建成功 */
   //printf("%d create %d success\n",thread_current()->tid,tid);
-  struct child_process_status *child_status = get_child_status(tid);
-  while (child_status->loaded == 0)
+  struct child_status *tmp_child_status = get_child_status_by_tid(tid);
+  while (tmp_child_status->is_loaded == 0)
   {
     //printf("tid:%d wait tid:%d to load\n",thread_current()->tid,child_status->child->tid);
     sema_down(&thread_current()->sema); /* 阻塞，等待子进程执行完loaded */
   }
-  if (child_status->loaded == -1) /* 子进程已经加载完毕 */
+  if (tmp_child_status->is_loaded == -1) /* 子进程已经加载完毕且加载失败 */
   {
     //printf("%d wake up,child %d loaded failed, ret_status:%d\n",thread_current()->tid,tid,child_status->ret_status);
     return -1;
@@ -125,9 +125,9 @@ start_process(void *file_name_)
   /* If load failed, quit. */
   if (!success)
   {
-    thread_current()->relay_status->loaded = -1;
+    thread_current()->as_child_status->is_loaded = -1;
     //printf("%d load failed , sema up parent tid:%d\n",thread_current()->tid,thread_current()->parent->tid);
-    sema_up(&thread_current()->parent->sema);
+    sema_up(&thread_current()->parent->sema); //唤醒阻塞在父进程信号量的其他子进程
     exit(-1);
   }
 
@@ -171,9 +171,9 @@ start_process(void *file_name_)
   // printf("start free\n");
   free(file_name);
   // printf("free success\n");
-  thread_current()->relay_status->loaded = 1;
+  thread_current()->as_child_status->is_loaded = 1; //加载成功
   //printf("%d load success, sema up parent tid:%d\n",thread_current()->tid,thread_current()->parent->tid);
-  sema_up(&thread_current()->parent->sema);
+  sema_up(&thread_current()->parent->sema); //唤醒阻塞在父进程信号量的其他子进程
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -199,32 +199,30 @@ start_process(void *file_name_)
 int process_wait(tid_t child_tid UNUSED)
 {
   //printf("%d process wait %d\n",thread_current()->tid,child_tid);
+  //非法tid返回-1
   if (child_tid == TID_ERROR)
   {
     //printf("%d TID invalid\n",child_tid);
     return -1; /* TID invalid */
   }
-  struct child_process_status *child_status = get_child_status(child_tid);
-  if (child_status == NULL)
+  struct child_status *tmp_child_status = get_child_status_by_tid(child_tid);
+  //不是当前进程的子进程，返回-1;tid对应子进程已经在wait系统调用中成功返回过一次了（waited）,返回-1
+  if (tmp_child_status == NULL || tmp_child_status->is_waited)
   {
     //printf("%d No child_status\n",child_tid);
     return -1; /* not child_tid */
   }
-  if (child_status->iswaited)
-  {
-    //printf("%d Is being waited\n",child_tid);
-    return -1;
-  }
-  child_status->iswaited = true;
-  while (!child_status->finish)
+  //将该子进程标为已经结束且已被父进程wait到了
+  tmp_child_status->is_waited = true;
+  while (!tmp_child_status->is_finished)
   {
     //printf("%d sema down , waits for %d\n",thread_current()->tid,child_tid);
     sema_down(&thread_current()->sema);
   }
   //printf("%d wait over , now free child_status->tid:%d , return %d\n",thread_current()->tid,child_tid,child_status->ret_status);
-  int res = child_status->ret_status;
-  list_remove(&child_status->elem);
-  free(child_status);
+  int res = tmp_child_status->ret_status; //正常退出时，ret_status就是子进程的返回值
+  list_remove(&tmp_child_status->elem);
+  free(tmp_child_status);
   return res;
 }
 
@@ -445,11 +443,13 @@ done:
   {
     t->dealing_file = file;
     file_deny_write(file);
-  }else{
+  }
+  else
+  {
     file_close(file);
   }
   lock_release(&file_lock);
-  
+
   return success;
 }
 
